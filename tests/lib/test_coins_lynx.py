@@ -1,3 +1,6 @@
+import re
+from pathlib import Path
+
 import pytest
 
 from electrumx.lib import coins, lynx_chains
@@ -50,3 +53,18 @@ def test_lynx_addresses(address, script, hashX):
     coin = lynx_chains.Lynx
     assert coin.pay_to_address_script(address).hex() == script
     assert coin.address_to_hashX(address).hex() == hashX
+
+
+CHAINS_DIR = Path(__file__).resolve().parents[2] / 'lynx' / 'chains'
+
+
+def test_every_chain_has_a_profile():
+    profiles = {}
+    for path in CHAINS_DIR.glob('*.env'):
+        match = re.search(r'^COIN_NAME="([^"]+)"', path.read_text(), re.M)
+        assert match, f'{path.name} has no COIN_NAME'
+        profiles[path.stem] = match.group(1)
+    assert sorted(profiles.values()) == sorted(lynx_chains.__all__)
+    for chain_id, coin_name in profiles.items():
+        assert Coin.lookup_coin_class(coin_name, 'mainnet').NAME == coin_name
+        assert chain_id == coin_name.lower()

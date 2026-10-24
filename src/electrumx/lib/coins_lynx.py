@@ -28,7 +28,7 @@ by lynx/tools/sync_chainparams.py from getlynx/Lynx src/kernel/chainparams.cpp.
 '''
 
 import electrumx.lib.tx as lib_tx
-from electrumx.lib.coins import Coin
+from electrumx.lib.coins import Block, Coin, ScryptMixin
 from electrumx.server.session import ElectrumX
 
 
@@ -59,3 +59,26 @@ class LynxFamily(Coin):
     TX_COUNT_HEIGHT = 1
     TX_PER_BLOCK = 1
     REORG_LIMIT = 5000
+
+
+class InfiniLooPMixin(ScryptMixin):
+    '''InfiniLooP's history from before it moved to the Lynx codebase.
+
+    Legacy InfiniLooP was Blackcoin-style: blocks with nVersion <= 6 are
+    identified by their scrypt hash (ScryptMixin), and transactions up to
+    and including LEGACY_TX_HEIGHT carry an nTime field after nVersion.
+    Later blocks and the mempool use the normal Lynx (SegWit) format.
+    '''
+
+    DESERIALIZER = lib_tx.DeserializerSegWit
+    LEGACY_DESERIALIZER = lib_tx.DeserializerTxTime
+    # getlynx/Lynx: consensus.infiniloopTransitionHeight
+    LEGACY_TX_HEIGHT = 2800000
+
+    @classmethod
+    def block(cls, raw_block: bytes, height: int) -> Block:
+        if height > cls.LEGACY_TX_HEIGHT:
+            return super().block(raw_block, height)
+        header = cls.block_header(raw_block, height)
+        txs = cls.LEGACY_DESERIALIZER(raw_block, start=len(header)).read_tx_block()
+        return Block(raw_block, header, txs)

@@ -23,8 +23,21 @@ SOURCE_PATH = 'src/kernel/chainparams.cpp'
 OUTPUT = Path(__file__).resolve().parents[2] / 'src/electrumx/lib/lynx_chains.py'
 
 # Chains that get an ElectrumX coin class, keyed by chain id in
-# chainparams.cpp. Everything here is what chainparams.cpp does not know.
+# chainparams.cpp. Everything here is what chainparams.cpp does not know:
+#   peers   Electrum peers to announce, e.g. 'host s' (SSL on the default port)
+#   mixins  extra base classes from coins_lynx.py for chain-specific behaviour
 CHAINS = {
+    'alioth': {},
+    'borrelly': {},
+    'cassiopeia': {},
+    'delphinus': {},
+    'digitalcoin': {},
+    'enceladus': {},
+    'fenrir': {},
+    'galatea': {},
+    'halley': {},
+    'indus': {},
+    'infiniloop': {'mixins': ['InfiniLooPMixin']},
     'lynx': {
         'peers': [
             'electrum5.getlynx.io s',
@@ -47,14 +60,15 @@ HEADER = '''\
 
 \'\'\'Coin classes for the Lynx-family chains (see coins_lynx.py).\'\'\'
 
-from electrumx.lib.coins_lynx import LynxFamily
+from electrumx.lib.coins_lynx import {imports}
 
-__all__ = [{names}]
+__all__ = [{names}
+]
 '''
 
 CLASS = '''
 
-class {cls}(LynxFamily):
+class {cls}({bases}):
     NAME = "{name}"
     SHORTNAME = "{symbol}"
     NET = "mainnet"
@@ -64,9 +78,7 @@ class {cls}(LynxFamily):
     GENESIS_HASH = ('{genesis_a}'
                     '{genesis_b}')
     RPC_PORT = {rpc_port}
-    PEERS = [
-{peers}
-    ]
+    PEERS = [{peers}]
 '''
 
 
@@ -117,7 +129,8 @@ def chain_class(chain_id, spec, extra):
         genesis_a=genesis[:32],
         genesis_b=genesis[32:],
         rpc_port=int(spec['nRPCPort']),
-        peers='\n'.join(f'        {json.dumps(peer)},' for peer in extra['peers']),
+        bases=', '.join(extra.get('mixins', []) + ['LynxFamily']),
+        peers=''.join(f'\n        {json.dumps(peer)},' for peer in extra.get('peers', [])) + ('\n    ' if extra.get('peers') else ''),
     )
 
 
@@ -134,12 +147,14 @@ def main():
         sys.exit(f'chains not in chainparams.cpp: {", ".join(unknown)}')
 
     out, names = [], []
+    mixins = sorted({m for extra in CHAINS.values() for m in extra.get('mixins', [])})
     for chain_id, extra in CHAINS.items():
         name, code = chain_class(chain_id, specs[chain_id], extra)
         names.append(name)
         out.append(code)
         print(f'{name:12} rpc={specs[chain_id]["nRPCPort"]:>5}  genesis={specs[chain_id]["genesishash"][:18]}...')
-    header = HEADER.format(source=source, names=', '.join(repr(n) for n in names))
+    header = HEADER.format(source=source, names=''.join(f'\n    {n!r},' for n in names),
+                           imports=', '.join(mixins + ['LynxFamily']))
     OUTPUT.write_text(header + ''.join(out))
 
     skipped = sorted(set(specs) - set(CHAINS))

@@ -3529,21 +3529,6 @@ class Batacoin(Coin):
     REORG_LIMIT = 5000
 
 
-class Digitalcoin(Coin):
-    NAME = "digitalcoin"
-    SHORTNAME = "DGC"
-    NET = "mainnet"
-    P2PKH_VERBYTE = bytes.fromhex("1e")
-    P2SH_VERBYTES = (bytes.fromhex("05"),)
-    GENESIS_HASH = ('5e039e1ca1dbf128973bf6cff98169e4'
-                    '0a1b194c3b91463ab74956f413b2f9c8')
-    TX_COUNT = 1
-    TX_COUNT_HEIGHT = 1
-    TX_PER_BLOCK = 1
-    RPC_PORT = 9413
-    REORG_LIMIT = 5000
-
-
 class Cannacoin(Coin):
     NAME = "cannacoin"
     SHORTNAME = "CCN"
