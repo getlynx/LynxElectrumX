@@ -29,6 +29,13 @@ REPORT_SERVICES=ssl://${DOMAIN}:${SSL_PORT},wss://${DOMAIN}:${WSS_PORT}
 SSL_CERTFILE=${TLS_DIR}/fullchain.pem
 SSL_KEYFILE=${TLS_DIR}/privkey.pem
 
-# Per-session resource limits. These are ElectrumX's defaults.
-COST_SOFT_LIMIT=1000
-COST_HARD_LIMIT=10000
+# Per-client resource limits (clients are grouped by IP range). Above the
+# soft limit requests are slowed down; at the hard limit the client is
+# disconnected. Cost decays by COST_HARD_LIMIT per hour. ElectrumX's defaults
+# (1000 / 10000 / 5000) throttled a 1,500-address wallet for its whole sync
+# and disconnected a client after about six large staking-address histories;
+# these values keep the protection but leave room for heavy legitimate use.
+COST_SOFT_LIMIT=10000
+COST_HARD_LIMIT=100000
+# Bytes sent or received that count as cost 1.0 (default 5000).
+BANDWIDTH_UNIT_COST=50000

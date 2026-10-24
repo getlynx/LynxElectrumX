@@ -14,7 +14,10 @@ Only run this against your own servers.
     python3 lynx/tools/load_test.py electrum10.getlynx.io --sessions 1 --scripthashes 1000 \
         --source electrum5.getlynx.io
 
-Test addresses are collected from --source (default: the server itself), so
+With --random, the addresses are random and unused, like the gap-limit
+addresses every wallet watches; they cost the same as small histories and
+need no collection. Otherwise test addresses are collected from --source
+(default: the server itself), so
 the collection does not count against the tested server's limits. Only
 addresses with at most --max-history transactions are used, like an ordinary
 wallet's.
@@ -84,6 +87,7 @@ async def main():
     parser.add_argument('server', help='host[:port] (default port 50002)')
     parser.add_argument('--sessions', type=int, default=5)
     parser.add_argument('--scripthashes', type=int, default=100, help='per session')
+    parser.add_argument('--random', action='store_true', help='use random unused addresses (no collection)')
     parser.add_argument('--source', help='server to collect test addresses from (default: server)')
     parser.add_argument('--max-history', type=int, default=50, help='largest history to use')
     parser.add_argument('--insecure', action='store_true', help='accept self-signed certificates')
@@ -91,11 +95,14 @@ async def main():
     args = parser.parse_args()
     rng = random.Random(args.seed)
 
-    source = args.source or args.server
-    print(f'Collecting {args.scripthashes * args.sessions} scripthashes from {source}...')
-    finder = await Server(source, args.insecure).connect(['1.4', '1.4.2'])
-    hashes = await find_scripthashes(finder, args.scripthashes * args.sessions, args.max_history, rng)
-    await finder.close()
+    if args.random:
+        hashes = [rng.randbytes(32).hex() for _ in range(args.scripthashes * args.sessions)]
+    else:
+        source = args.source or args.server
+        print(f'Collecting {args.scripthashes * args.sessions} scripthashes from {source}...')
+        finder = await Server(source, args.insecure).connect(['1.4', '1.4.2'])
+        hashes = await find_scripthashes(finder, args.scripthashes * args.sessions, args.max_history, rng)
+        await finder.close()
 
     print(f'Running {args.sessions} sessions x {args.scripthashes} scripthashes')
     results = []
