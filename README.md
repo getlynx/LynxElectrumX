@@ -150,6 +150,32 @@ Read the release notes first. A major ElectrumX version can require re-indexing 
 
 None. Certificates renew automatically (`certbot.timer`), the firewall rules are re-applied every 10 minutes (`electrumx-patch-firewall.timer`), and ElectrumX 2.0 no longer needs the history compaction that 1.x servers required. See the [operator guide](lynx/README.md#maintenance).
 
+### Staking on an Electrum server
+
+An Electrum server's node can also stake, so the server helps secure the network as well as serving wallets. Staking adds very little load, and ElectrumX is not slowed down when its node finds a block.
+
+**Encrypt the wallet with a strong passphrase first. This is highly recommended.** ElectrumX itself never uses the wallet: it only reads blocks and transactions and broadcasts transactions. But it holds the node's RPC password, and an Electrum server is a public, internet-facing service. If ElectrumX were ever compromised, an unencrypted (or fully unlocked) wallet could be emptied with that password. With the wallet encrypted and unlocked *for staking only*, Lynx Core refuses every command that sends coins or exports keys (`sendtoaddress`, `send`, `sendall`, `signrawtransactionwithwallet`, `dumpprivkey`, `dumpwallet` and others), so the coins stay safe even then.
+
+1. **Encrypt the wallet** with a long, random passphrase (for example six or more random words) and store it somewhere safe off the server. The leading space keeps the command out of the shell history:
+   ```bash
+    lynx-cli -datadir=/var/lib/lynx encryptwallet "<passphrase>"
+   ```
+2. **Make a new wallet backup.** Encrypting creates new keys, so backups made before encryption do not cover coins received afterwards.
+3. **Unlock for staking only.** The `0` keeps it unlocked until the node restarts and `true` means staking only. The passphrase is read from the terminal without echoing:
+   ```bash
+   lynx-cli -datadir=/var/lib/lynx -stdinwalletpassphrase walletpassphrase 0 true
+   ```
+4. **Send the coins to stake** to an address from this wallet (`getnewaddress`).
+
+Replace `lynx` with your chain in the commands above.
+
+Keep in mind:
+
+- **After every node restart** (a reboot, or a Spark update), the wallet is locked again and staking stops until you repeat step 3. If you automate this, keep the passphrase in a root-only file (`chmod 600`), never in `/etc/electrumx.conf`.
+- **A strong passphrase matters.** Someone with the RPC password could still copy the *encrypted* wallet file (`backupwallet`) and try to guess the passphrase offline, or stop staking (`walletlock`). Neither moves coins if the passphrase cannot be guessed.
+- **Keep the node's data private.** Check that `/var/lib/<chain>` is not readable by other users (`ls -ld /var/lib/lynx` should show `drwx------`; fix with `chmod 700`).
+- **Treat it as a hot wallet.** Stake modest amounts on each server, not reserve funds.
+
 ## Documentation
 
 | | |
