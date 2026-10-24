@@ -1,0 +1,34 @@
+# Checks for the Lynx-specific parts of this repository. Upstream's ci.yml
+# runs the full pytest suite, including tests/lib/test_coins_lynx.py.
+name: lynx
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: shellcheck
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get install -yq shellcheck
+          shellcheck lynx/build.sh lynx/firewall/lynx-electrumx-firewall lynx/certbot/*.sh lynx/tools/*.sh
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: pycodestyle
+        run: |
+          pip install pycodestyle
+          pycodestyle --max-line-length=140 lynx/tools
+
+      - name: generated coin classes are up to date
+        run: |
+          python3 lynx/tools/sync_chainparams.py --ref "$(sed -n 's|^# Source: https://github.com/getlynx/Lynx/blob/\([0-9a-f]*\)/.*|\1|p' src/electrumx/lib/lynx_chains.py)"
+          git diff --exit-code src/electrumx/lib/lynx_chains.py

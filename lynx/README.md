@@ -41,6 +41,22 @@ journalctl -fu electrumx
 /opt/lynx-electrumx/venv/bin/electrumx_rpc getinfo     # sync height, sessions
 ```
 
+## Before moving DNS to a new server
+
+Compare its answers with a current server for the same chain:
+
+```bash
+python3 lynx/tools/compare_servers.py electrum5.getlynx.io electrum10.getlynx.io --samples 50
+```
+
+It checks headers, merkle proofs, transactions and address histories at random heights, and that protocol 1.7's outpoint methods are refused. It exits non-zero on any unexpected difference. It works while the new server is still syncing, comparing only heights the new server has indexed.
+
+To see how a heavy client (many addresses from one IP) is treated under the current `COST_SOFT_LIMIT`/`COST_HARD_LIMIT`, run against your own server only:
+
+```bash
+python3 lynx/tools/load_test.py electrum10.getlynx.io --sessions 10 --scripthashes 200
+```
+
 ## Updating
 
 ```bash
