@@ -94,7 +94,7 @@ class Server:
 class Report:
     def __init__(self, verbose):
         self.verbose = verbose
-        self.same = self.diffs = 0
+        self.same = self.diffs = self.skipped_large = 0
 
     def compare(self, label, a, b):
         if a == b:
@@ -196,7 +196,14 @@ async def compare_servers(args):
     print(f'Scripthashes ({len(scripthashes)} found in the sampled transactions)')
     for sh in sorted(scripthashes)[:args.max_scripthashes]:
         label = sh[:16]
-        a, b = await both(old, new, 'blockchain.scripthash.get_history', [sh])
+        # Ask the old server first: ElectrumX 1.x refuses histories over about
+        # 1 MB (MAX_SEND), 2.0 serves up to 8 MB. Don't spend the new server's
+        # cost budget on a history there is nothing to compare with.
+        a = await old.attempt('blockchain.scripthash.get_history', [sh])
+        if a == {'error': 'history too large'}:
+            report.skipped_large += 1
+            continue
+        b = await new.attempt('blockchain.scripthash.get_history', [sh])
         if 'error' in a or 'error' in b:
             report.compare(f'scripthash.get_history {label}', a, b)
             continue
@@ -206,6 +213,9 @@ async def compare_servers(args):
         if tips_equal:
             report.compare(f'scripthash.get_balance {label}',
                            *await both(old, new, 'blockchain.scripthash.get_balance', [sh]))
+
+    if report.skipped_large:
+        print(f'  info  {report.skipped_large} histories too large for the old server (MAX_SEND); not compared')
 
     print('Fees and mempool (depend on each node, shown only)')
     report.show('blockchain.estimatefee 2', *await both(old, new, 'blockchain.estimatefee', [2]))
@@ -247,8 +257,15 @@ async def main():
         args.seed = random.randrange(1 << 32)
     print(f'old: {args.old}   new: {args.new}   seed: {args.seed}\n')
 
-    report = await compare_servers(args)
-    await check_new_protocols(args, report)
+    try:
+        report = await compare_servers(args)
+        await check_new_protocols(args, report)
+    except (ConnectionError, RPCError) as e:
+        # ElectrumX disconnects, then refuses, a client over COST_HARD_LIMIT
+        # until its cost has decayed.
+        print(f'\nSTOPPED: {e}. If this is "excessive resource usage", the server\'s'
+              ' COST_HARD_LIMIT was reached; wait a while or use fewer --samples/--max-scripthashes.')
+        sys.exit(2)
     print(f'\n{report.same} matched, {report.diffs} differed')
     sys.exit(1 if report.diffs else 0)
 

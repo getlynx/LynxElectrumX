@@ -6,6 +6,7 @@ This repository is [spesmilo/electrumx](https://github.com/spesmilo/electrumx) w
 
 | File | Change | Why |
 |---|---|---|
+| `README.md` | Rewritten for LynxElectrumX. | Upstream's README describes upstream; theirs is at [spesmilo/electrumx](https://github.com/spesmilo/electrumx). On merges, keep ours. |
 | `src/electrumx/lib/coins.py` | Removed upstream's `class Lynx(Coin)`. | Replaced by the generated class in `lynx_chains.py`. Upstream's had the wrong `RPC_PORT` (9139; Lynx uses 8332). |
 | `src/electrumx/lib/coins.py` | Removed upstream's `class Digitalcoin(Coin)`. | Replaced by the generated class. Digitalcoin now runs on the Lynx codebase (SegWit, proof of stake); upstream's had the wrong `RPC_PORT` (9413; now 7998). |
 | `src/electrumx/lib/coins.py` | Added `from electrumx.lib.lynx_chains import *` at the end of the file. | `Coin.lookup_coin_class()` only finds classes that are names in `coins.py`. |
