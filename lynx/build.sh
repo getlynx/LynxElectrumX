@@ -41,7 +41,7 @@ CHAIN="${LEX_CHAIN:-}"
 DOMAIN="${LEX_DOMAIN:-}"
 EMAIL="${LEX_EMAIL:-domains@getlynx.io}"
 TLS="${LEX_TLS:-certbot}"
-VERSION="${LEX_VERSION:-$DEFAULT_VERSION}"
+RELEASE="${LEX_VERSION:-$DEFAULT_VERSION}"
 DB_ENGINE="${LEX_DB:-leveldb}"
 REPO="${LEX_REPO:-$DEFAULT_REPO}"
 DAEMON_URL="${LEX_DAEMON_URL:-}"
@@ -64,7 +64,7 @@ parse_args() {
             --domain) DOMAIN="${2:?--domain needs a value}"; shift ;;
             --email) EMAIL="${2:?--email needs a value}"; shift ;;
             --tls) TLS="${2:?--tls needs a value}"; shift ;;
-            --version) VERSION="${2:?--version needs a value}"; shift ;;
+            --version) RELEASE="${2:?--version needs a value}"; shift ;;
             --db) DB_ENGINE="${2:?--db needs a value}"; shift ;;
             --repo) REPO="${2:?--repo needs a value}"; shift ;;
             --daemon-url) DAEMON_URL="${2:?--daemon-url needs a value}"; shift ;;
@@ -87,11 +87,15 @@ parse_args() {
 
 check_system() {
     [ "$(id -u)" -eq 0 ] || die "run as root"
-    # shellcheck disable=SC1091
-    . /etc/os-release
-    if [ "${ID:-}" != "debian" ] || [ "${VERSION_ID:-}" != "13" ]; then
-        [ "$FORCE" = 1 ] || die "this installer targets Debian 13; found ${PRETTY_NAME:-unknown} (use --force to try anyway)"
-        warn "not Debian 13 (${PRETTY_NAME:-unknown}); continuing because of --force"
+    # Read os-release in a subshell: it defines VERSION, NAME and others that
+    # would overwrite this script's own variables.
+    local os_id os_version os_name
+    os_id="$(. /etc/os-release && echo "${ID:-}")"
+    os_version="$(. /etc/os-release && echo "${VERSION_ID:-}")"
+    os_name="$(. /etc/os-release && echo "${PRETTY_NAME:-unknown}")"
+    if [ "$os_id" != "debian" ] || [ "$os_version" != "13" ]; then
+        [ "$FORCE" = 1 ] || die "this installer targets Debian 13; found $os_name (use --force to try anyway)"
+        warn "not Debian 13 ($os_name); continuing because of --force"
     fi
     command -v systemctl >/dev/null || die "systemd is required"
 }
@@ -110,7 +114,7 @@ install_packages() {
     apt-get install -yq --no-install-recommends "${pkgs[@]}"
 }
 
-# Check out $VERSION (tag, branch or commit) in $SRC. Sets CODE_CHANGED.
+# Check out $RELEASE (tag, branch or commit) in $SRC. Sets CODE_CHANGED.
 fetch_code() {
     local before="" ref
     if [ -d "$SRC/.git" ]; then
@@ -122,19 +126,19 @@ fetch_code() {
         install -d -m 755 "$PREFIX"
         git clone --quiet --no-checkout "$REPO" "$SRC"
     fi
-    if git -C "$SRC" rev-parse --verify --quiet "refs/tags/$VERSION^{commit}" >/dev/null; then
-        ref="refs/tags/$VERSION"
-    elif git -C "$SRC" rev-parse --verify --quiet "refs/remotes/origin/$VERSION^{commit}" >/dev/null; then
-        ref="refs/remotes/origin/$VERSION"
-    elif git -C "$SRC" rev-parse --verify --quiet "$VERSION^{commit}" >/dev/null; then
-        ref="$VERSION"
+    if git -C "$SRC" rev-parse --verify --quiet "refs/tags/$RELEASE^{commit}" >/dev/null; then
+        ref="refs/tags/$RELEASE"
+    elif git -C "$SRC" rev-parse --verify --quiet "refs/remotes/origin/$RELEASE^{commit}" >/dev/null; then
+        ref="refs/remotes/origin/$RELEASE"
+    elif git -C "$SRC" rev-parse --verify --quiet "$RELEASE^{commit}" >/dev/null; then
+        ref="$RELEASE"
     else
-        die "version $VERSION not found in $REPO"
+        die "version $RELEASE not found in $REPO"
     fi
     git -C "$SRC" -c advice.detachedHead=false checkout --quiet --force --detach "$ref"
     CODE_CHANGED=0
     [ "$before" = "$(git -C "$SRC" rev-parse HEAD)" ] || CODE_CHANGED=1
-    info "LynxElectrumX $VERSION ($(git -C "$SRC" rev-parse --short HEAD))"
+    info "LynxElectrumX $RELEASE ($(git -C "$SRC" rev-parse --short HEAD))"
 }
 
 load_profile() {
@@ -206,7 +210,7 @@ read_node_rpc() {
     [ -n "$host" ] || host="$(conf_get rpcconnect)"
     [ -n "$host" ] || host="127.0.0.1"
     if [ -z "$port" ]; then
-        port="$(ss -tlnH "src ${host//[][]/}" 2>/dev/null | awk '{ n = split($4, a, ":"); print a[n] }' | head -n1)"
+        port="$(ss -tlnH "src ${host//[][]/}" 2>/dev/null | awk 'NR == 1 { n = split($4, a, ":"); print a[n] }')"
     fi
     [ -n "$port" ] || port="$COIN_RPC_PORT"
 
@@ -316,7 +320,7 @@ install_file() {
 
 write_config() {
     export COIN_NAME DAEMON_URL DB_DIRECTORY DB_ENGINE CACHE_MB SSL_PORT WSS_PORT \
-        DOMAIN TLS_DIR VERSION NODE_CONF NODE_SERVICE PREFIX
+        DOMAIN TLS_DIR RELEASE NODE_CONF NODE_SERVICE PREFIX
     local tmp; tmp="$(mktemp)"
     render electrumx.conf.tmpl > "$tmp"
     CHANGED=0
@@ -391,7 +395,7 @@ summary() {
     expiry="$(openssl x509 -in "$TLS_DIR/fullchain.pem" -noout -enddate 2>/dev/null | cut -d= -f2)"
     cat <<EOF
 
-LynxElectrumX $VERSION ($(git -C "$SRC" rev-parse --short HEAD)), ElectrumX $EX_VERSION
+LynxElectrumX $RELEASE ($(git -C "$SRC" rev-parse --short HEAD)), ElectrumX $EX_VERSION
   Coin:         $COIN_NAME   (DB: $DB_ENGINE in $DB_DIRECTORY)
   Services:     ssl://$DOMAIN:$SSL_PORT  wss://$DOMAIN:$WSS_PORT
   Certificate:  $TLS, expires ${expiry:-unknown}
@@ -408,7 +412,7 @@ main() {
     check_system
     touch "$LOG" && chmod 600 "$LOG"
     exec > >(tee -a "$LOG") 2>&1
-    info "$(date -u '+%F %T UTC') build.sh --chain $CHAIN --domain $DOMAIN --tls $TLS --version $VERSION --db $DB_ENGINE"
+    info "$(date -u '+%F %T UTC') build.sh --chain $CHAIN --domain $DOMAIN --tls $TLS --version $RELEASE --db $DB_ENGINE"
 
     install_packages
     fetch_code
