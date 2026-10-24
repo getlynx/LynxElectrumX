@@ -68,3 +68,16 @@ def test_every_chain_has_a_profile():
     for chain_id, coin_name in profiles.items():
         assert Coin.lookup_coin_class(coin_name, 'mainnet').NAME == coin_name
         assert chain_id == coin_name.lower()
+
+
+def test_infiniloop_genesis_uses_scrypt_hash():
+    # Version-1 genesis header rebuilt from getlynx/Lynx chainparams.cpp
+    # (timestamp 1609281149, nBits 0x1e0fffff, nonce 703813). Blocks with
+    # nVersion <= 6 are identified by their scrypt hash; the block fixtures
+    # are all version 7 or later, so this is the only check of that rule.
+    header = bytes.fromhex(
+        '01000000' + '00' * 32
+        + '745c0132ab3a421ebdd110b6303bee9d562613d3d35e91751497c90856c944ab'
+        + '7daeeb5f' + 'ffff0f1e' + '45bd0a00')
+    coin = lynx_chains.InfiniLooP
+    assert coin.header_hash_rev(header)[::-1].hex() == coin.GENESIS_HASH
