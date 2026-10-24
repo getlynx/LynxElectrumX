@@ -1,0 +1,108 @@
+#!/bin/bash
+# Keep the public Electrum ports open in Spark's SPARK firewall chain.
+#
+# Spark's patch_firewall.sh (getlynx/Lynx contrib/installer) re-runs every
+# 6 hours. It deletes any port rule added directly to SPARK, and any
+# SPARK_<NAME> sub-chain unless /etc/systemd/system/<name>-patch-firewall.service
+# exists. So our rules live in sub-chain SPARK_ELECTRUMX, which
+# electrumx-patch-firewall.service keeps alive by running this script.
+#
+# Works on IPv4 and IPv6: each family is handled when its SPARK chain exists.
+#
+# Usage: lynx-electrumx-firewall [apply|open-http|close-http]
+#   apply       (default) allow the ports in SERVICES from /etc/electrumx.conf
+#   open-http   also allow tcp/80, for a certbot challenge (certbot pre-hook)
+#   close-http  stop allowing tcp/80 (certbot post-hook)
+#
+# tcp/80 goes in our sub-chain too, not directly in SPARK, because Spark's
+# script would prune it from SPARK if it ran during a challenge. A marker
+# file keeps it across "apply" runs until close-http.
+
+set -euo pipefail
+
+CONF="${ELECTRUMX_CONF:-/etc/electrumx.conf}"
+PARENT="SPARK"
+SUBCHAIN="SPARK_ELECTRUMX"
+LOCKFILE="/var/lock/spark-iptables"   # shared with Spark's own firewall scripts
+HTTP_MARKER="/run/lynx-electrumx/http-open"
+
+log() {
+    logger -t lynx-electrumx-firewall "$*" 2>/dev/null || true
+    echo "$*"
+}
+
+# Ports of the public services in SERVICES=, e.g. ssl://:50002,wss://:50004,rpc://
+public_ports() {
+    sed -n 's/^SERVICES=//p' "$CONF" | tr ',' '\n' | grep -v '^rpc://' |
+        sed -n 's/.*:\([0-9][0-9]*\)$/\1/p' || true
+}
+
+# The iptables commands (iptables, ip6tables) whose SPARK chain exists.
+families() {
+    local ipt
+    for ipt in iptables ip6tables; do
+        if command -v "$ipt" >/dev/null && "$ipt" -n -L "$PARENT" >/dev/null 2>&1; then
+            echo "$ipt"
+        fi
+    done
+}
+
+apply() {
+    local ports ipt port drop_line found=0
+    ports="$(public_ports)"
+    if [ -z "$ports" ]; then
+        log "ERROR: no public ports found in SERVICES in $CONF"
+        exit 1
+    fi
+    if [ -e "$HTTP_MARKER" ]; then
+        ports="$ports"$'\n'"80"
+    fi
+    for ipt in $(families); do
+        found=1
+        "$ipt" -N "$SUBCHAIN" 2>/dev/null || true
+        "$ipt" -F "$SUBCHAIN"
+        for port in $ports; do
+            "$ipt" -A "$SUBCHAIN" -p tcp --dport "$port" -j ACCEPT
+        done
+        # Jump to the sub-chain before SPARK's final DROP, as Spark does for
+        # its per-chain sub-chains.
+        if ! "$ipt" -C "$PARENT" -j "$SUBCHAIN" 2>/dev/null; then
+            drop_line="$("$ipt" -L "$PARENT" --line-numbers -n | awk '$2 == "DROP" { n = $1 } END { print n }')"
+            if [ -n "$drop_line" ]; then
+                "$ipt" -I "$PARENT" "$drop_line" -j "$SUBCHAIN"
+            else
+                "$ipt" -A "$PARENT" -j "$SUBCHAIN"
+            fi
+        fi
+        log "$ipt: $SUBCHAIN allows tcp ${ports//$'\n'/ }"
+    done
+    if [ "$found" = 0 ]; then
+        log "no $PARENT chain found; nothing to do (is the Spark firewall installed?)"
+    fi
+}
+
+open_http() {
+    install -d -m 755 "${HTTP_MARKER%/*}"
+    touch "$HTTP_MARKER"
+    apply
+}
+
+close_http() {
+    rm -f "$HTTP_MARKER"
+    apply
+}
+
+action="${1:-apply}"
+case "$action" in
+    apply|open-http|close-http) ;;
+    *) echo "usage: $0 [apply|open-http|close-http]" >&2; exit 2 ;;
+esac
+
+(
+    flock -w 30 200 || { log "ERROR: could not acquire $LOCKFILE"; exit 1; }
+    case "$action" in
+        apply) apply ;;
+        open-http) open_http ;;
+        close-http) close_http ;;
+    esac
+) 200>"$LOCKFILE"

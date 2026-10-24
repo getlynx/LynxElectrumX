@@ -1,0 +1,13 @@
+# Re-applies the SPARK_ELECTRUMX firewall sub-chain. The unit name matters:
+# Spark's patch_firewall.sh keeps a SPARK_<NAME> sub-chain only while
+# <name>-patch-firewall.service exists.
+[Unit]
+Description=Open the ElectrumX ports in the Spark firewall
+After=network-online.target ${NODE_SERVICE}-patch-firewall.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lynx-electrumx-firewall apply
+
+[Install]
+WantedBy=multi-user.target

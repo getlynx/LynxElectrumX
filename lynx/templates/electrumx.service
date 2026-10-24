@@ -1,0 +1,17 @@
+[Unit]
+Description=ElectrumX (${COIN_NAME})
+Wants=network-online.target
+After=network-online.target ${NODE_SERVICE}.service
+
+[Service]
+EnvironmentFile=/etc/electrumx.conf
+ExecStart=${PREFIX}/venv/bin/electrumx_server
+ExecStop=${PREFIX}/venv/bin/electrumx_rpc -p 8000 stop
+User=electrumx
+LimitNOFILE=8192
+TimeoutStopSec=30min
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

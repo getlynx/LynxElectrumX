@@ -1,0 +1,17 @@
+# Exact versions of e-x's runtime dependencies, so every server built from
+# the same tag runs the same code. build.sh installs with `pip install -c`.
+# Update deliberately (e.g. when merging upstream), then run pytest.
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.5
+aiorpcX==0.25.0
+aiosignal==1.4.0
+attrs==26.1.0
+frozenlist==1.8.0
+idna==3.20
+multidict==7.1.0
+plyvel==1.5.1
+propcache==0.5.4
+rocksdb-ng==2.4.0
+typing_extensions==4.16.0
+websockets==17.3
+yarl==1.25.1

@@ -1,0 +1,11 @@
+# Spark builds its SPARK chain shortly after boot and may rebuild it later,
+# so re-apply our sub-chain regularly. Each run is idempotent.
+[Unit]
+Description=Re-apply the ElectrumX firewall rules
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target
