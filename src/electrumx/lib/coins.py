@@ -3593,22 +3593,6 @@ class Adcoin(Coin):
     REORG_LIMIT = 5000
 
 
-class Lynx(Coin):
-    NAME = "Lynx"
-    SHORTNAME = "LYNX"
-    NET = "mainnet"
-    P2PKH_VERBYTE = bytes.fromhex("2d")
-    P2SH_VERBYTES = (bytes.fromhex("16"),)
-    GENESIS_HASH = ('984b30fc9bb5e5ff424ad7f4ec193053'
-                    '8a7b14a2d93e58ad7976c23154ea4a76')
-    DESERIALIZER = lib_tx.DeserializerSegWit
-    TX_COUNT = 1
-    TX_COUNT_HEIGHT = 1
-    TX_PER_BLOCK = 1
-    RPC_PORT = 9139
-    REORG_LIMIT = 5000
-
-
 class LitecoinCash(Coin):
     NAME = "LitecoinCash"
     SHORTNAME = "LCC"
@@ -3810,3 +3794,8 @@ class FerriteTestnet(Ferrite):
         'enode2.ferritecoin.org s t',
         'enode3.ferritecoin.org s t',
     ]
+
+
+# Lynx-family chains live in their own modules; see lynx/docs/CHANGES-FROM-UPSTREAM.md.
+# Imported by name because Coin.lookup_coin_class() only scans this module.
+from electrumx.lib.lynx_chains import *  # noqa: E402,F401,F403
