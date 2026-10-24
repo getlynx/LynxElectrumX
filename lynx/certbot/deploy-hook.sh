@@ -15,8 +15,9 @@ install -m 644 -o electrumx -g electrumx "$RENEWED_LINEAGE/fullchain.pem" "$TLS_
 install -m 600 -o electrumx -g electrumx "$RENEWED_LINEAGE/privkey.pem" "$TLS_DIR/privkey.pem"
 logger -t lynx-electrumx-certbot "installed certificate from $RENEWED_LINEAGE"
 
-# try-restart does nothing if ElectrumX is not running yet (first install).
-# build.sh sets LEX_NO_RESTART and restarts ElectrumX itself if needed.
-if [ -z "${LEX_NO_RESTART:-}" ]; then
+# On the first install the service does not exist yet; build.sh starts it
+# afterwards. build.sh also sets LEX_NO_RESTART and restarts ElectrumX itself
+# if needed.
+if [ -z "${LEX_NO_RESTART:-}" ] && systemctl cat electrumx.service >/dev/null 2>&1; then
     systemctl try-restart electrumx.service
 fi

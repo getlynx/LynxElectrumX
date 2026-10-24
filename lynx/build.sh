@@ -395,7 +395,7 @@ summary() {
     expiry="$(openssl x509 -in "$TLS_DIR/fullchain.pem" -noout -enddate 2>/dev/null | cut -d= -f2)"
     cat <<EOF
 
-LynxElectrumX $RELEASE ($(git -C "$SRC" rev-parse --short HEAD)), ElectrumX $EX_VERSION
+LynxElectrumX $RELEASE ($(git -C "$SRC" rev-parse --short HEAD)), $EX_VERSION
   Coin:         $COIN_NAME   (DB: $DB_ENGINE in $DB_DIRECTORY)
   Services:     ssl://$DOMAIN:$SSL_PORT  wss://$DOMAIN:$WSS_PORT
   Certificate:  $TLS, expires ${expiry:-unknown}
