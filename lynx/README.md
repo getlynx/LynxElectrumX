@@ -57,6 +57,16 @@ To see how a heavy client (many addresses from one IP) is treated under the curr
 python3 lynx/tools/load_test.py electrum10.getlynx.io --sessions 10 --scripthashes 200
 ```
 
+## Maintenance
+
+There is no routine maintenance. In particular, the monthly steps the old 1.x servers needed must **not** be carried over:
+
+- **No history compaction.** ElectrumX 2.0's database cannot hit the old flush-count overflow, and the compaction tool no longer exists.
+- **No `chown` of `/etc/letsencrypt`.** ElectrumX reads its own copy of the certificate in `/etc/electrumx/tls/`, refreshed by the certbot deploy hook. `certbot.timer` handles renewal.
+- **No firewall re-run.** `electrumx-patch-firewall.timer` re-applies the ports every 10 minutes.
+
+`systemctl list-timers certbot.timer electrumx-patch-firewall.timer` shows both scheduled jobs.
+
 ## Updating
 
 ```bash
