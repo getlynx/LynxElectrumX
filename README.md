@@ -35,20 +35,52 @@ Chain parameters (address prefixes, genesis hash, ports) come from [`src/kernel/
 
 ## Installing a server
 
-### Requirements
+### Recommended VPS
 
-- A **Debian 13** VPS. One chain per VPS. Lynx runs on 2 vCPU and 4 GB RAM (with swap; the initial indexing uses the most memory). Leave disk room for the node's data and the ElectrumX database.
-- The chain's node installed with **Spark** and **fully synced**:
-  ```bash
-  bash <(curl -sL install.getlynx.io) --chain=<chain>
-  ```
-- A **hostname** for the server, with an A record (and an AAAA record, if you publish one) pointing at the VPS. The installer gets a Let's Encrypt certificate for it.
-- Inbound **TCP 80, 50002 and 50004** allowed by your provider's firewall, if it has one. The firewall on the VPS itself is handled by the installer.
-- Root access.
+| | Recommended | Notes |
+|---|---|---|
+| OS | **Debian 13** (trixie), fresh install | The installer refuses other systems unless forced. |
+| CPU | **2 vCPU** | Plenty once indexed; the initial indexing is the busy part. |
+| RAM | **4 GB** | Measured on Lynx: ElectrumX peaks at about 2.1 GB while indexing, the node uses about 0.35 GB. Spark adds a 4 GB swap file. |
+| Disk | **80 GB SSD** | Room for the node's chain data, the ElectrumX database and growth. Use SSD or NVMe, not spinning disks. |
+| Network | Public IPv4 (IPv6 optional) | Inbound TCP 80, 50002 and 50004 must be reachable. |
 
-### Install
+A 2 vCPU / 4 GB VPS indexed all of Lynx (about 3.3 million blocks) in under 75 minutes.
 
-As root, on the VPS:
+### One ElectrumX per VPS
+
+Run **one chain, and so one ElectrumX server, per VPS**. Several ElectrumX servers can technically share a machine, but this repository does not support it, and it is not recommended:
+
+- **Ports.** Wallets expect SSL on 50002 and WebSocket on 50004, and only one server per IP address can use them. A second chain on the same VPS would need non-standard ports that every wallet has to be told about.
+- **Memory.** Each server needs its own node plus about 2 GB while indexing. Two on a 4 GB VPS would swap heavily.
+- **Isolation.** With one chain per VPS, a problem with one server (or its node) never affects another chain.
+
+### Step 1: set up the node with Spark
+
+[Spark](https://github.com/getlynx/Lynx/tree/main/contrib/installer) installs and runs the chain's node. On the fresh Debian 13 VPS, as root:
+
+```bash
+bash <(curl -sL install.getlynx.io) --chain=lynx
+```
+
+Use your chain's name from the table above. Spark installs the node as a systemd service (named after the chain), writes its config to `/var/lib/<chain>/<chain>.conf` with RPC credentials bound to the local machine, sets up its firewall (SSH and the node's P2P port only), adds swap if needed, and starts syncing. ElectrumX needs no extra node settings: the transaction index it relies on is on by default in Lynx Core.
+
+Wait until the node is **fully synced** before step 2. Log in again so the Spark console loads, then:
+
+```bash
+gbi        # same as: <chain>-cli -datadir=/var/lib/<chain> getblockchaininfo
+```
+
+The node is ready when it shows `"initialblockdownload": false`. The installer checks this too and stops if the node is still syncing.
+
+### Step 2: install ElectrumX
+
+Before running the installer, make sure:
+
+- the server's **hostname** has an A record (and an AAAA record, if you publish one) pointing at this VPS; the installer gets a Let's Encrypt certificate for it and checks every record;
+- your provider's firewall, if it has one, allows inbound **TCP 80, 50002 and 50004**; the firewall on the VPS itself is handled by the installer.
+
+Then, as root:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/getlynx/LynxElectrumX/main/lynx/build.sh \

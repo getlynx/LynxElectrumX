@@ -1,6 +1,6 @@
 # Running a LynxElectrumX server
 
-`lynx/build.sh` turns a Debian 13 VPS that runs a synced [Spark](https://github.com/getlynx/Lynx/tree/main/contrib/installer) node into an ElectrumX server for that node's chain. One chain per VPS.
+`lynx/build.sh` turns a Debian 13 VPS that runs a synced [Spark](https://github.com/getlynx/Lynx/tree/main/contrib/installer) node into an ElectrumX server for that node's chain. Run one chain (one ElectrumX server) per VPS; 2 vCPU, 4 GB RAM and an 80 GB SSD is the recommended size. See the [main README](../README.md#recommended-vps) for why, and for setting up the node with Spark.
 
 ## Before you start
 
