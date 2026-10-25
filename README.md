@@ -164,7 +164,7 @@ lynx-electrumx-rpc lynx getinfo           # "db height" catches up with "daemon 
 journalctl -fu electrumx@lynx             # live log for one chain
 ```
 
-Once a chain's indexing is complete, its log shows `Starting servers`. From any other machine, using that chain's SSL port:
+Once a chain's indexing is complete, its log shows `caught up to height …` and then `SSL server listening on …`. From any other machine, using that chain's SSL port:
 
 ```bash
 echo '{"id":1,"method":"server.version","params":["test","1.4"]}' \
