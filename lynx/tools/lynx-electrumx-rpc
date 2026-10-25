@@ -1,0 +1,30 @@
+#!/bin/bash
+# Run electrumx_rpc against one chain's ElectrumX on this server, looking up
+# its admin port. Installed into /usr/local/bin by build.sh.
+#
+#   lynx-electrumx-rpc <chain> getinfo
+#   lynx-electrumx-rpc lynx sessions
+#
+# With no arguments, lists the chains configured here.
+
+set -euo pipefail
+
+CONF_DIR="/etc/electrumx"
+PREFIX="/opt/lynx-electrumx"
+
+if [ $# -eq 0 ]; then
+    for conf in "$CONF_DIR"/*.conf; do
+        [ -e "$conf" ] || { echo "no chains configured in $CONF_DIR"; exit 1; }
+        chain="$(basename "$conf" .conf)"
+        echo "$chain  ($(systemctl is-active "electrumx@$chain.service"))"
+    done
+    exit 0
+fi
+
+chain="$1"
+shift
+conf="$CONF_DIR/$chain.conf"
+[ -r "$conf" ] || { echo "ERROR: no ElectrumX configured for '$chain' ($conf)" >&2; exit 1; }
+port="$(sed -n 's/^LEX_ADMIN_PORT=//p' "$conf")"
+[ -n "$port" ] || { echo "ERROR: LEX_ADMIN_PORT missing from $conf" >&2; exit 1; }
+exec "$PREFIX/venv/bin/electrumx_rpc" -p "$port" "${@:-getinfo}"

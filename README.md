@@ -16,20 +16,24 @@ This repository is [spesmilo/electrumx](https://github.com/spesmilo/electrumx), 
 
 All twelve chains run the same Lynx Core codebase: 80-byte headers, SegWit transactions, proof of stake.
 
-| Chain | Ticker | `--chain` | Node RPC port |
-|---|---|---|---|
-| Alioth | ALIO | `alioth` | 55802 |
-| Borrelly | BORR | `borrelly` | 58401 |
-| Cassiopeia | CASS | `cassiopeia` | 53054 |
-| Delphinus | DELP | `delphinus` | 57691 |
-| Digitalcoin | DGC | `digitalcoin` | 7998 |
-| Enceladus | ENCE | `enceladus` | 58611 |
-| Fenrir | FENR | `fenrir` | 54826 |
-| Galatea | GALA | `galatea` | 55786 |
-| Halley | HALL | `halley` | 53837 |
-| Indus | INDU | `indus` | 54701 |
-| InfiniLooP | IL8P | `infiniloop` | 9459 |
-| Lynx | LYNX | `lynx` | 8332 |
+Each chain's Electrum ports follow from its P2P port: **SSL = P2P + 3**, **WebSocket (WSS) = P2P + 4**, and the local admin port = P2P + 5. They are the same on every server, so several chains can share one server and wallets always use the same port for a chain.
+
+| Chain | Ticker | `--chain` | P2P port | Electrum SSL | Electrum WSS |
+|---|---|---|---|---|---|
+| Alioth | ALIO | `alioth` | 55801 | 55804 | 55805 |
+| Borrelly | BORR | `borrelly` | 58400 | 58403 | 58404 |
+| Cassiopeia | CASS | `cassiopeia` | 53053 | 53056 | 53057 |
+| Delphinus | DELP | `delphinus` | 57690 | 57693 | 57694 |
+| Digitalcoin | DGC | `digitalcoin` | 7999 | 8002 | 8003 |
+| Enceladus | ENCE | `enceladus` | 58610 | 58613 | 58614 |
+| Fenrir | FENR | `fenrir` | 54825 | 54828 | 54829 |
+| Galatea | GALA | `galatea` | 55785 | 55788 | 55789 |
+| Halley | HALL | `halley` | 53836 | 53839 | 53840 |
+| Indus | INDU | `indus` | 54700 | 54703 | 54704 |
+| InfiniLooP | IL8P | `infiniloop` | 9449 | 9452 | 9453 |
+| Lynx | LYNX | `lynx` | 22566 | 22569 | 22570 |
+
+The public servers `electrum1.getlynx.io` and `electrum2.getlynx.io` run every chain on these ports.
 
 Chain parameters (address prefixes, genesis hash, ports) come from [`src/kernel/chainparams.cpp`](https://github.com/getlynx/Lynx/blob/main/src/kernel/chainparams.cpp) in getlynx/Lynx. InfiniLooP's history from before it moved to the Lynx codebase (scrypt block hashes, `nTime` transactions up to height 2,800,000) is handled too.
 
@@ -37,35 +41,31 @@ Chain parameters (address prefixes, genesis hash, ports) come from [`src/kernel/
 
 ### Recommended VPS
 
-| | Recommended | Notes |
+A server can run one chain or several. Each chain gets its own node and its own ElectrumX, on that chain's ports.
+
+| | One chain | All 12 chains |
 |---|---|---|
-| OS | **Debian 13** (trixie), fresh install | The installer refuses other systems unless forced. |
-| CPU | **2 vCPU** | Plenty once indexed; the initial indexing is the busy part. |
-| RAM | **4 GB** | Measured on Lynx: ElectrumX peaks at about 2.1 GB while indexing, the node uses about 0.35 GB. Spark adds a 4 GB swap file. |
-| Disk | **80 GB SSD** | Room for the node's chain data, the ElectrumX database and growth. Use SSD or NVMe, not spinning disks. |
-| Network | Public IPv4 (IPv6 optional) | Inbound TCP 80, 50002 and 50004 must be reachable. |
+| OS | **Debian 13** (trixie), fresh install | **Debian 13** (trixie), fresh install |
+| CPU | **2 vCPU** | **6 vCPU** |
+| RAM | **4 GB** | **16 GB** |
+| Disk | **80 GB SSD** | **640 GB SSD** |
+| Network | Public IPv4 (IPv6 optional) | Public IPv4 (IPv6 optional) |
 
-A 2 vCPU / 4 GB VPS indexed all of Lynx (about 3.3 million blocks) in under 75 minutes.
+Measured on Lynx with one chain: ElectrumX peaks at about 2.1 GB of RAM while indexing (about 3.3 million blocks, under 75 minutes on 2 vCPU / 4 GB), and the node uses about 0.35 GB. Spark adds a 4 GB swap file. The all-chains figures allow for twelve nodes plus twelve ElectrumX servers with room to index one large chain (Lynx, InfiniLooP, Digitalcoin) at a time; the other nine chains are small. Use SSD or NVMe, not spinning disks.
 
-### One ElectrumX per VPS
-
-Run **one chain, and so one ElectrumX server, per VPS**. Several ElectrumX servers can technically share a machine, but this repository does not support it, and it is not recommended:
-
-- **Ports.** Wallets expect SSL on 50002 and WebSocket on 50004, and only one server per IP address can use them. A second chain on the same VPS would need non-standard ports that every wallet has to be told about.
-- **Memory.** Each server needs its own node plus about 2 GB while indexing. Two on a 4 GB VPS would swap heavily.
-- **Isolation.** With one chain per VPS, a problem with one server (or its node) never affects another chain.
+**Run at least two servers for each chain, in different places.** Wallets list several servers and switch when one is down. With all chains on one server, an outage there affects every chain, so a second all-chains server elsewhere (for example one in North America and one in Europe) is what keeps service up.
 
 ### Step 1: set up the node with Spark
 
-[Spark](https://github.com/getlynx/Lynx/tree/main/contrib/installer) installs and runs the chain's node. On the fresh Debian 13 VPS, as root:
+[Spark](https://github.com/getlynx/Lynx/tree/main/contrib/installer) installs and runs each chain's node. On the fresh Debian 13 VPS, as root, once per chain:
 
 ```bash
 bash <(curl -sL install.getlynx.io) --chain=lynx
 ```
 
-Use your chain's name from the table above. Spark installs the node as a systemd service (named after the chain), writes its config to `/var/lib/<chain>/<chain>.conf` with RPC credentials bound to the local machine, sets up its firewall (SSH and the node's P2P port only), adds swap if needed, and starts syncing. ElectrumX needs no extra node settings: the transaction index it relies on is on by default in Lynx Core.
+Use the chain names from the table above. Spark installs the node as a systemd service (named after the chain), writes its config to `/var/lib/<chain>/<chain>.conf` with RPC credentials bound to the local machine, sets up its firewall (SSH and the node's P2P port only), adds swap if needed, and starts syncing. ElectrumX needs no extra node settings: the transaction index it relies on is on by default in Lynx Core.
 
-Wait until the node is **fully synced** before step 2. Log in again so the Spark console loads, then:
+Wait until each node is **fully synced** before step 2. Log in again so the Spark console loads, then:
 
 ```bash
 gbi        # same as: <chain>-cli -datadir=/var/lib/<chain> getblockchaininfo
@@ -78,70 +78,78 @@ The node is ready when it shows `"initialblockdownload": false`. The installer c
 Before running the installer, make sure:
 
 - the server's **hostname** has an A record (and an AAAA record, if you publish one) pointing at this VPS; the installer gets a Let's Encrypt certificate for it and checks every record;
-- your provider's firewall, if it has one, allows inbound **TCP 80, 50002 and 50004**; the firewall on the VPS itself is handled by the installer.
+- your provider's firewall, if it has one, allows inbound **TCP 80** (certificates) and each chain's **SSL and WSS ports** from the table above; the firewall on the VPS itself is handled by the installer.
 
-Then, as root:
+Then, as root, for one chain:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/getlynx/LynxElectrumX/main/lynx/build.sh \
   | bash -s -- --chain lynx --domain electrum.example.com --version main
 ```
 
-Replace `lynx` with your chain and `electrum.example.com` with your hostname. This takes about 5–10 minutes. The installer:
+or for every chain whose Spark node is installed on the server (a comma-separated list such as `--chain lynx,alioth` works too):
+
+```bash
+curl -sL https://raw.githubusercontent.com/getlynx/LynxElectrumX/main/lynx/build.sh \
+  | bash -s -- --chain all --domain electrum.example.com --version main
+```
+
+Replace `electrum.example.com` with the server's hostname. This takes about 5–10 minutes. The installer:
 
 1. installs the system packages it needs;
 2. checks out a pinned version of this repository into `/opt/lynx-electrumx` and builds a Python environment with pinned dependencies;
-3. reads the node's RPC settings from its Spark config, and refuses to continue unless the node is synced and really is the chosen chain (genesis hash check);
+3. reads each node's RPC settings from its Spark config, and refuses to continue unless every node is synced and really is the chosen chain (genesis hash check);
 4. checks the hostname's DNS records point at this server;
-5. gets a Let's Encrypt certificate and confirms automatic renewal works;
-6. opens the Electrum ports in Spark's firewall (IPv4, and IPv6 wherever Spark's firewall covers it);
-7. installs and starts the `electrumx` service, then prints a summary.
+5. gets one Let's Encrypt certificate for the hostname, shared by all chains on the server, and confirms automatic renewal works;
+6. opens every chain's Electrum ports in Spark's firewall (IPv4, and IPv6 wherever Spark's firewall covers it);
+7. writes `/etc/electrumx/<chain>.conf` and starts `electrumx@<chain>.service` for each chain, then prints a summary with each chain's ports.
 
-ElectrumX then indexes the chain from genesis. For Lynx (about 3.3 million blocks) this took under 75 minutes on a 2 vCPU, 4 GB VPS. The Electrum ports open once indexing is complete.
+ElectrumX then indexes each chain from genesis; a chain's ports open once its indexing is complete. On a server with several chains, start the large chains (Lynx, InfiniLooP, Digitalcoin) one run at a time if RAM is tight.
 
 Every option can also be given as an environment variable, so the installer can run unattended:
 
 | Option | Environment | Default | |
 |---|---|---|---|
-| `--chain` | `LEX_CHAIN` | (required) | see the table above |
+| `--chain` | `LEX_CHAIN` | (required) | a chain, a comma-separated list, or `all` |
 | `--domain` | `LEX_DOMAIN` | (required) | public hostname |
 | `--email` | `LEX_EMAIL` | `domains@getlynx.io` | Let's Encrypt contact |
 | `--tls` | `LEX_TLS` | `certbot` | or `selfsigned`, for testing only |
 | `--version` | `LEX_VERSION` | the release tag in `build.sh` | tag, branch or commit to install |
 | `--db` | `LEX_DB` | `leveldb` | or `rocksdb` |
 | `--repo` | `LEX_REPO` | this repository | e.g. a fork or local clone |
-| `--daemon-url` | `LEX_DAEMON_URL` | read from the node config | `http://user:pass@host:port/` |
+| `--daemon-url` | `LEX_DAEMON_URL` | read from the node config | `http://user:pass@host:port/` (one chain only) |
 | `--force` | `LEX_FORCE=1` | | allow a system other than Debian 13 |
 | `--follow-logs` | | | follow the log when done |
 
-Running the installer again is safe. It changes only what differs and restarts ElectrumX only when the code, configuration or certificate changed.
+Running the installer again is safe. It changes only what differs and restarts a chain's ElectrumX only when the code, its configuration or the certificate changed. Chains already set up but not named in `--chain` are left alone. A server set up by an earlier single-chain version is moved to this layout automatically, keeping its database.
 
 ### Check that it works
 
 ```bash
-journalctl -fu electrumx                                # live log
-/opt/lynx-electrumx/venv/bin/electrumx_rpc getinfo      # "db height" catches up with "daemon height"
+lynx-electrumx-rpc                        # the chains on this server, and whether each is running
+lynx-electrumx-rpc lynx getinfo           # "db height" catches up with "daemon height"
+journalctl -fu electrumx@lynx             # live log for one chain
 ```
 
-Once indexing is complete, the log shows `Starting servers`. From any other machine:
+Once a chain's indexing is complete, its log shows `Starting servers`. From any other machine, using that chain's SSL port:
 
 ```bash
 echo '{"id":1,"method":"server.version","params":["test","1.4"]}' \
-  | openssl s_client -quiet -connect electrum.example.com:50002 -servername electrum.example.com
+  | openssl s_client -quiet -connect electrum.example.com:22569 -servername electrum.example.com
 ```
 
 should answer with `"result":["ElectrumX 2.0.0","1.4"]`.
 
 ### Connect a wallet
 
-In the wallet's server settings, enter the hostname with port **50002** (TLS). Web clients can use **wss://electrum.example.com:50004**. Plain TCP (port 50001) is not offered.
+In the wallet's server settings, enter the hostname with the chain's **SSL port** from the table above, for example `electrum1.getlynx.io:22569` for Lynx. Web clients use the chain's WSS port, for example `wss://electrum1.getlynx.io:22570`. Plain TCP is not offered.
 
 ### Update
 
 Re-run the installer with the new version:
 
 ```bash
-/opt/lynx-electrumx/src/lynx/build.sh --chain lynx --domain electrum.example.com --version <tag>
+/opt/lynx-electrumx/src/lynx/build.sh --chain all --domain electrum.example.com --version <tag>
 ```
 
 Read the release notes first. A major ElectrumX version can require re-indexing from genesis.
@@ -171,7 +179,7 @@ Replace `lynx` with your chain in the commands above.
 
 Keep in mind:
 
-- **After every node restart** (a reboot, or a Spark update), the wallet is locked again and staking stops until you repeat step 3. If you automate this, keep the passphrase in a root-only file (`chmod 600`), never in `/etc/electrumx.conf`.
+- **After every node restart** (a reboot, or a Spark update), the wallet is locked again and staking stops until you repeat step 3. If you automate this, keep the passphrase in a root-only file (`chmod 600`), never in `/etc/electrumx/<chain>.conf`.
 - **A strong passphrase matters.** Someone with the RPC password could still copy the *encrypted* wallet file (`backupwallet`) and try to guess the passphrase offline, or stop staking (`walletlock`). Neither moves coins if the passphrase cannot be guessed.
 - **Keep the node's data private.** Check that `/var/lib/<chain>` is not readable by other users (`ls -ld /var/lib/lynx` should show `drwx------`; fix with `chmod 700`).
 - **Treat it as a hot wallet.** Stake modest amounts on each server, not reserve funds.
@@ -187,7 +195,7 @@ Keep in mind:
 ### Differences from upstream ElectrumX
 
 - **Protocol is capped at 1.6** for these chains. Protocol 1.7's `blockchain.outpoint.*` methods need the node's `txospenderindex` (Bitcoin Core 31+), which Lynx Core 28.x does not have; without it, spent outputs would be reported as unspent.
-- **Servers offer TLS only**: SSL on 50002 and WebSocket over TLS on 50004.
+- **Servers offer TLS only**: SSL and WebSocket over TLS, on each chain's own ports (see [Supported chains](#supported-chains)).
 
 ## Development
 
@@ -197,7 +205,7 @@ Keep in mind:
 src/electrumx/lib/coins_lynx.py   Lynx-family base class, protocol cap, InfiniLooP history (hand-written)
 src/electrumx/lib/lynx_chains.py  one class per chain (generated; do not edit)
 lynx/build.sh                     the installer
-lynx/chains/<chain>.env           per-chain installer profile
+lynx/chains/<chain>.env           per-chain installer profile and ports (generated; do not edit)
 lynx/templates/                   electrumx.conf and systemd units
 lynx/certbot/, lynx/firewall/     certificate hooks and firewall helper
 lynx/tools/                       maintenance and testing tools (below)
@@ -218,7 +226,7 @@ pytest
 
 | Tool | Use |
 |---|---|
-| `lynx/tools/sync_chainparams.py` | Regenerate `lynx_chains.py` after `chainparams.cpp` in getlynx/Lynx changes, or to add a chain. Run it by hand, review `git diff`, run `pytest`. |
+| `lynx/tools/sync_chainparams.py` | Regenerate `lynx_chains.py` and the chain profiles (with their ports) after `chainparams.cpp` in getlynx/Lynx changes, or to add a chain. It refuses if two chains' ports would clash. Run it by hand, review `git diff`, run `pytest`. |
 | `lynx/tools/make_block_fixture.sh` | On a host with a chain's node, write a block test fixture for `tests/blocks/`. |
 | `lynx/tools/compare_servers.py` | Ask two servers the same questions and report differences; use before moving DNS to a new server. |
 | `lynx/tools/load_test.py` | See how a server treats one heavy client, to tune `COST_SOFT_LIMIT` and `COST_HARD_LIMIT`. Run against your own servers only. |
@@ -226,7 +234,7 @@ pytest
 ### Adding a chain
 
 1. Add the chain to `CHAINS` in `lynx/tools/sync_chainparams.py` and run it.
-2. Add a block fixture with `make_block_fixture.sh` and a `lynx/chains/<chain>.env` profile.
+2. Add a block fixture with `make_block_fixture.sh`. The chain's profile and ports are generated in step 1.
 3. Run `pytest`. The tests fail if a chain has no fixture or no profile.
 
 ### Taking upstream updates

@@ -3,7 +3,7 @@
 # <name>-patch-firewall.service exists.
 [Unit]
 Description=Open the ElectrumX ports in the Spark firewall
-After=network-online.target ${NODE_SERVICE}-patch-firewall.service
+After=network-online.target
 
 [Service]
 Type=oneshot

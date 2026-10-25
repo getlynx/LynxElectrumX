@@ -1,0 +1,19 @@
+# One ElectrumX server per chain: electrumx@lynx.service, electrumx@alioth.service, ...
+# The instance name is the chain id; its settings are in /etc/electrumx/<chain>.conf.
+[Unit]
+Description=ElectrumX (%i)
+Wants=network-online.target
+After=network-online.target %i.service
+
+[Service]
+EnvironmentFile=/etc/electrumx/%i.conf
+ExecStart=${PREFIX}/venv/bin/electrumx_server
+ExecStop=${PREFIX}/venv/bin/electrumx_rpc -p $${LEX_ADMIN_PORT} stop
+User=electrumx
+LimitNOFILE=8192
+TimeoutStopSec=30min
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

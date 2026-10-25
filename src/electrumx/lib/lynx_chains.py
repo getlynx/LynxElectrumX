@@ -32,7 +32,10 @@ class Alioth(LynxFamily):
     GENESIS_HASH = ('fa9f9bd23d7ed9984c1fe756caeaa3af'
                     '9e63887f4b1fe4807f3915af74c61a7b')
     RPC_PORT = 55802
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s55804",
+        "electrum2.getlynx.io s55804",
+    ]
 
 
 class Borrelly(LynxFamily):
@@ -45,7 +48,10 @@ class Borrelly(LynxFamily):
     GENESIS_HASH = ('c936175d9ea6f49a595f7cd75ce065c5'
                     'bb08ed5abc0e5d8b42b04735d916e4a7')
     RPC_PORT = 58401
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s58403",
+        "electrum2.getlynx.io s58403",
+    ]
 
 
 class Cassiopeia(LynxFamily):
@@ -58,7 +64,10 @@ class Cassiopeia(LynxFamily):
     GENESIS_HASH = ('d288cc1734cefc4a36a13c5de8d66335'
                     '6dcc6b1ca7a6d1f0fd3b6a6a34b0d0c3')
     RPC_PORT = 53054
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s53056",
+        "electrum2.getlynx.io s53056",
+    ]
 
 
 class Delphinus(LynxFamily):
@@ -71,7 +80,10 @@ class Delphinus(LynxFamily):
     GENESIS_HASH = ('2d749f17c25d34c4cd443dc44a0e895e'
                     '99bce4d59a6d38404c2ab4bc3a244237')
     RPC_PORT = 57691
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s57693",
+        "electrum2.getlynx.io s57693",
+    ]
 
 
 class Digitalcoin(LynxFamily):
@@ -84,7 +96,10 @@ class Digitalcoin(LynxFamily):
     GENESIS_HASH = ('5e039e1ca1dbf128973bf6cff98169e4'
                     '0a1b194c3b91463ab74956f413b2f9c8')
     RPC_PORT = 7998
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s8002",
+        "electrum2.getlynx.io s8002",
+    ]
 
 
 class Enceladus(LynxFamily):
@@ -97,7 +112,10 @@ class Enceladus(LynxFamily):
     GENESIS_HASH = ('68274c0a8bcb86634a341a8a98294c48'
                     '83e70953a07f7db6c9982eb1b1a66efe')
     RPC_PORT = 58611
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s58613",
+        "electrum2.getlynx.io s58613",
+    ]
 
 
 class Fenrir(LynxFamily):
@@ -110,7 +128,10 @@ class Fenrir(LynxFamily):
     GENESIS_HASH = ('43204086224f60f8ab041f5fc6b3c6b7'
                     '2b01323fb9408fc7c49412d916188c7d')
     RPC_PORT = 54826
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s54828",
+        "electrum2.getlynx.io s54828",
+    ]
 
 
 class Galatea(LynxFamily):
@@ -123,7 +144,10 @@ class Galatea(LynxFamily):
     GENESIS_HASH = ('0ea1f114252089752aa0016f27d7e8fa'
                     'ee61a8e7586700b2a87c7b368eb7468d')
     RPC_PORT = 55786
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s55788",
+        "electrum2.getlynx.io s55788",
+    ]
 
 
 class Halley(LynxFamily):
@@ -136,7 +160,10 @@ class Halley(LynxFamily):
     GENESIS_HASH = ('77fe25810bdd8930db8e69fd85b7912a'
                     '984a6a362ad8b2e528f3bd765c02a778')
     RPC_PORT = 53837
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s53839",
+        "electrum2.getlynx.io s53839",
+    ]
 
 
 class Indus(LynxFamily):
@@ -149,7 +176,10 @@ class Indus(LynxFamily):
     GENESIS_HASH = ('18d80573782f9dfc69e2230a876f86e5'
                     '87f081ef3eb1ab81ca66a20d6625f00a')
     RPC_PORT = 54701
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s54703",
+        "electrum2.getlynx.io s54703",
+    ]
 
 
 class InfiniLooP(InfiniLooPMixin, LynxFamily):
@@ -162,7 +192,10 @@ class InfiniLooP(InfiniLooPMixin, LynxFamily):
     GENESIS_HASH = ('000001ed1ed7503c6ef472314d8138b7'
                     '440ebd0c5c8b539481705032bbed295a')
     RPC_PORT = 9459
-    PEERS = []
+    PEERS = [
+        "electrum1.getlynx.io s9452",
+        "electrum2.getlynx.io s9452",
+    ]
 
 
 class Lynx(LynxFamily):
@@ -176,6 +209,8 @@ class Lynx(LynxFamily):
                     '8a7b14a2d93e58ad7976c23154ea4a76')
     RPC_PORT = 8332
     PEERS = [
+        "electrum1.getlynx.io s22569",
+        "electrum2.getlynx.io s22569",
         "electrum5.getlynx.io s",
         "electrum6.getlynx.io s",
         "electrum7.getlynx.io s",

@@ -17,7 +17,7 @@ jobs:
         run: |
           sudo apt-get -qq update
           sudo apt-get install -yq shellcheck
-          shellcheck lynx/build.sh lynx/firewall/lynx-electrumx-firewall lynx/certbot/*.sh lynx/tools/*.sh
+          shellcheck lynx/build.sh lynx/firewall/lynx-electrumx-firewall lynx/certbot/*.sh lynx/tools/*.sh lynx/tools/lynx-electrumx-rpc
 
       - uses: actions/setup-python@v6
         with:
@@ -28,7 +28,7 @@ jobs:
           pip install pycodestyle
           pycodestyle --max-line-length=140 lynx/tools
 
-      - name: generated coin classes are up to date
+      - name: generated coin classes and chain profiles are up to date
         run: |
           python3 lynx/tools/sync_chainparams.py --ref "$(sed -n 's|^# Source: https://github.com/getlynx/Lynx/blob/\([0-9a-f]*\)/.*|\1|p' src/electrumx/lib/lynx_chains.py)"
-          git diff --exit-code src/electrumx/lib/lynx_chains.py
+          git diff --exit-code src/electrumx/lib/lynx_chains.py lynx/chains

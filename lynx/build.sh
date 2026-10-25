@@ -1,26 +1,33 @@
 #!/bin/bash
-# LynxElectrumX installer: turns a Debian 13 VPS running a synced Spark node
-# (bash <(curl -sL install.getlynx.io)) into an ElectrumX server for that chain.
+# LynxElectrumX installer: turns a Debian 13 VPS running synced Spark nodes
+# (bash <(curl -sL install.getlynx.io)) into ElectrumX servers for those chains.
 #
 #   build.sh --chain lynx --domain electrum.example.com [options]
+#   build.sh --chain lynx,alioth --domain electrum.example.com
+#   build.sh --chain all --domain electrum.example.com
+#
+# Each chain gets its own ElectrumX (electrumx@<chain>.service) on its own
+# ports; all chains on the server share the hostname and its certificate.
+# "all" means every chain whose Spark node is installed on this server.
 #
 # Every option can also be set with the environment variable shown, so the
 # script runs unattended. It only prompts for a missing --chain or --domain
 # when a terminal is attached.
 #
-#   --chain NAME        LEX_CHAIN       chain profile in lynx/chains/ (required)
+#   --chain LIST        LEX_CHAIN       chain(s) from lynx/chains/, comma-separated, or "all" (required)
 #   --domain HOST       LEX_DOMAIN      public hostname of this server (required)
 #   --email ADDR        LEX_EMAIL       Let's Encrypt contact (default: domains@getlynx.io)
 #   --tls MODE          LEX_TLS         certbot (default) or selfsigned (testing only)
 #   --version REF       LEX_VERSION     LynxElectrumX tag to install (default: see below)
 #   --db ENGINE         LEX_DB          leveldb (default) or rocksdb
 #   --repo URL          LEX_REPO        LynxElectrumX git URL
-#   --daemon-url URL    LEX_DAEMON_URL  node RPC URL; skips reading the node config
+#   --daemon-url URL    LEX_DAEMON_URL  node RPC URL (one chain only); skips reading the node config
 #   --force             LEX_FORCE=1     allow a system other than Debian 13
-#   --follow-logs                       follow the ElectrumX log when done
+#   --follow-logs                       follow the ElectrumX log when done (one chain only)
 #
-# Re-running is safe and changes only what differs. To update, re-run with a
-# newer --version. Log: /var/log/lynx-electrumx-build.log
+# Re-running is safe and changes only what differs; chains already set up
+# and not named in --chain are left alone. To update, re-run with a newer
+# --version and --chain all. Log: /var/log/lynx-electrumx-build.log
 
 set -euo pipefail
 export LC_ALL=C.UTF-8 DEBIAN_FRONTEND=noninteractive
@@ -32,21 +39,24 @@ PREFIX="/opt/lynx-electrumx"
 SRC="$PREFIX/src"
 VENV="$PREFIX/venv"
 HOOK_DIR="/usr/local/lib/lynx-electrumx"
-CONF="/etc/electrumx.conf"
-TLS_DIR="/etc/electrumx/tls"
-DB_DIRECTORY="/db"
+CONF_DIR="/etc/electrumx"
+DB_ROOT="/db"
 LOG="/var/log/lynx-electrumx-build.log"
 
-CHAIN="${LEX_CHAIN:-}"
+CHAIN_ARG="${LEX_CHAIN:-}"
 DOMAIN="${LEX_DOMAIN:-}"
 EMAIL="${LEX_EMAIL:-domains@getlynx.io}"
 TLS="${LEX_TLS:-certbot}"
 RELEASE="${LEX_VERSION:-$DEFAULT_VERSION}"
 DB_ENGINE="${LEX_DB:-leveldb}"
 REPO="${LEX_REPO:-$DEFAULT_REPO}"
-DAEMON_URL="${LEX_DAEMON_URL:-}"
+DAEMON_URL_ARG="${LEX_DAEMON_URL:-}"
 FORCE="${LEX_FORCE:-0}"
 FOLLOW_LOGS=0
+
+CHAINS=()                 # chain ids to set up in this run
+declare -A DAEMON_URLS    # chain id -> node RPC URL
+declare -A HEIGHTS        # chain id -> node height
 
 info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
@@ -60,14 +70,14 @@ usage() {
 parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
-            --chain) CHAIN="${2:?--chain needs a value}"; shift ;;
+            --chain) CHAIN_ARG="${2:?--chain needs a value}"; shift ;;
             --domain) DOMAIN="${2:?--domain needs a value}"; shift ;;
             --email) EMAIL="${2:?--email needs a value}"; shift ;;
             --tls) TLS="${2:?--tls needs a value}"; shift ;;
             --version) RELEASE="${2:?--version needs a value}"; shift ;;
             --db) DB_ENGINE="${2:?--db needs a value}"; shift ;;
             --repo) REPO="${2:?--repo needs a value}"; shift ;;
-            --daemon-url) DAEMON_URL="${2:?--daemon-url needs a value}"; shift ;;
+            --daemon-url) DAEMON_URL_ARG="${2:?--daemon-url needs a value}"; shift ;;
             --force) FORCE=1 ;;
             --follow-logs) FOLLOW_LOGS=1 ;;
             -h|--help) usage 0 ;;
@@ -76,11 +86,11 @@ parse_args() {
         shift
     done
 
-    if [ -z "$CHAIN" ] && [ -t 0 ]; then read -rp "Chain (e.g. lynx): " CHAIN; fi
+    if [ -z "$CHAIN_ARG" ] && [ -t 0 ]; then read -rp "Chain(s), e.g. lynx or all: " CHAIN_ARG; fi
     if [ -z "$DOMAIN" ] && [ -t 0 ]; then read -rp "Public hostname of this server: " DOMAIN; fi
-    [ -n "$CHAIN" ] || die "--chain is required"
+    [ -n "$CHAIN_ARG" ] || die "--chain is required"
     [ -n "$DOMAIN" ] || die "--domain is required"
-    CHAIN="${CHAIN,,}"
+    CHAIN_ARG="${CHAIN_ARG,,}"
     case "$TLS" in certbot|selfsigned) ;; *) die "--tls must be certbot or selfsigned" ;; esac
     case "$DB_ENGINE" in leveldb|rocksdb) ;; *) die "--db must be leveldb or rocksdb" ;; esac
 }
@@ -141,19 +151,43 @@ fetch_code() {
     info "LynxElectrumX $RELEASE ($(git -C "$SRC" rev-parse --short HEAD))"
 }
 
-load_profile() {
-    local profile="$SRC/lynx/chains/$CHAIN.env"
-    if [ ! -f "$profile" ]; then
-        local available=("$SRC"/lynx/chains/*.env)
-        available=("${available[@]##*/}")
-        die "no chain profile '$CHAIN'; available: ${available[*]%.env}"
+# Expand --chain into CHAINS: a list, or "all" = every chain with a Spark node here.
+resolve_chains() {
+    local profile chain
+    if [ "$CHAIN_ARG" = all ]; then
+        for profile in "$SRC"/lynx/chains/*.env; do
+            chain="$(basename "$profile" .env)"
+            # shellcheck disable=SC1090
+            if (. "$profile" && [ -f "$NODE_CONF" ]); then CHAINS+=("$chain"); fi
+        done
+        [ ${#CHAINS[@]} -gt 0 ] || die "no Spark nodes found on this server; install one first: bash <(curl -sL install.getlynx.io)"
+    else
+        IFS=, read -ra CHAINS <<< "$CHAIN_ARG"
+        for chain in "${CHAINS[@]}"; do
+            if [ ! -f "$SRC/lynx/chains/$chain.env" ]; then
+                local available=("$SRC"/lynx/chains/*.env)
+                available=("${available[@]##*/}")
+                die "no chain profile '$chain'; available: ${available[*]%.env}"
+            fi
+        done
     fi
+    if [ ${#CHAINS[@]} -gt 1 ]; then
+        [ -z "$DAEMON_URL_ARG" ] || die "--daemon-url can only be used with a single chain"
+        [ "$FOLLOW_LOGS" = 0 ] || die "--follow-logs can only be used with a single chain"
+    fi
+    info "Chains: ${CHAINS[*]}"
+}
+
+# Load lynx/chains/<chain>.env into the current shell.
+load_profile() {
+    CHAIN="$1"
+    local profile="$SRC/lynx/chains/$CHAIN.env" var
     # shellcheck disable=SC1090
     . "$profile"
-    local var
-    for var in COIN_NAME NODE_SERVICE NODE_CONF NODE_COOKIE SSL_PORT WSS_PORT MIN_DISK_GB MIN_RAM_GB CACHE_MB; do
+    for var in COIN_NAME NODE_SERVICE NODE_CONF NODE_COOKIE SSL_PORT WSS_PORT ADMIN_PORT MIN_DISK_GB MIN_RAM_GB CACHE_MB; do
         [ -n "${!var:-}" ] || die "$profile does not set $var"
     done
+    DB_DIRECTORY="$DB_ROOT/$CHAIN"
 }
 
 install_venv() {
@@ -166,13 +200,19 @@ install_venv() {
     "$VENV/bin/pip" install --quiet --disable-pip-version-check \
         --no-deps --force-reinstall "$SRC"
     EX_VERSION="$("$VENV/bin/python" -c 'import electrumx; print(electrumx.version)')"
-    COIN_GENESIS="$("$VENV/bin/python" - "$COIN_NAME" <<'PY'
+}
+
+# Sets COIN_GENESIS and COIN_RPC_PORT for the loaded profile's coin.
+coin_info() {
+    local info_line
+    info_line="$("$VENV/bin/python" - "$COIN_NAME" <<'PY'
 import sys
 from electrumx.lib.coins import Coin
-print(Coin.lookup_coin_class(sys.argv[1], 'mainnet').GENESIS_HASH)
+coin = Coin.lookup_coin_class(sys.argv[1], 'mainnet')
+print(coin.GENESIS_HASH, coin.RPC_PORT)
 PY
 )" || die "COIN_NAME=$COIN_NAME is not a coin class in this version"
-    COIN_RPC_PORT="$("$VENV/bin/python" -c "from electrumx.lib.coins import Coin; print(Coin.lookup_coin_class('$COIN_NAME', 'mainnet').RPC_PORT)")"
+    read -r COIN_GENESIS COIN_RPC_PORT <<< "$info_line"
 }
 
 # Print the value of a node config key, as Bitcoin-Core-style nodes read it:
@@ -193,7 +233,7 @@ conf_get() {
 
 # Build DAEMON_URL from the node config written by Spark.
 read_node_rpc() {
-    [ -f "$NODE_CONF" ] || die "$NODE_CONF not found; install and sync the node first: bash <(curl -sL install.getlynx.io)"
+    [ -f "$NODE_CONF" ] || die "$NODE_CONF not found; install and sync the $CHAIN node first: bash <(curl -sL install.getlynx.io) --chain=$CHAIN"
     local user pass port bind host
     user="$(conf_get rpcuser)"
     pass="$(conf_get rpcpassword)"
@@ -209,14 +249,13 @@ read_node_rpc() {
     esac
     [ -n "$host" ] || host="$(conf_get rpcconnect)"
     [ -n "$host" ] || host="127.0.0.1"
-    if [ -z "$port" ]; then
-        port="$(ss -tlnH "src ${host//[][]/}" 2>/dev/null | awk 'NR == 1 { n = split($4, a, ":"); print a[n] }')"
-    fi
+    # The coin's default RPC port: rpcport is usually not set in the Spark
+    # config, and every chain's default port is unique.
     [ -n "$port" ] || port="$COIN_RPC_PORT"
 
     if [ -z "$user" ] || [ -z "$pass" ]; then
         [ -r "$NODE_COOKIE" ] || die "no rpcuser/rpcpassword in $NODE_CONF and no cookie at $NODE_COOKIE"
-        warn "using the node's cookie file; it changes whenever the node restarts, which will break ElectrumX's connection. Set rpcuser/rpcpassword in $NODE_CONF instead."
+        warn "$CHAIN: using the node's cookie file; it changes whenever the node restarts, which will break ElectrumX's connection. Set rpcuser/rpcpassword in $NODE_CONF instead."
         IFS=: read -r user pass < "$NODE_COOKIE"
     fi
     DAEMON_URL="$("$VENV/bin/python" - "$user" "$pass" "$host" "$port" <<'PY'
@@ -226,7 +265,6 @@ user, password, host, port = sys.argv[1:]
 print(f'http://{quote(user, safe="")}:{quote(password, safe="")}@{host}:{port}/')
 PY
 )"
-    info "Node RPC: $host:$port"
 }
 
 # Call a node RPC method; prints the JSON "result".
@@ -245,25 +283,43 @@ print(json.dumps(reply["result"]))'
 
 check_node() {
     local info_json ibd chain blocks genesis
-    info_json="$(rpc getblockchaininfo)" || die "cannot reach the node RPC with the settings from $NODE_CONF (is $NODE_SERVICE running?)"
+    info_json="$(rpc getblockchaininfo)" || die "$CHAIN: cannot reach the node RPC with the settings from $NODE_CONF (is $NODE_SERVICE running?)"
     read -r chain blocks ibd < <("$VENV/bin/python" -c '
 import json, sys
 i = json.loads(sys.argv[1])
 print(i.get("chain"), i.get("blocks"), str(i.get("initialblockdownload")).lower())' "$info_json")
-    [ "$chain" = main ] || warn "node reports chain '$chain', expected 'main'"
-    [ "$ibd" = false ] || die "node is still syncing (height $blocks); re-run once it has caught up"
+    [ "$chain" = main ] || warn "$CHAIN: node reports chain '$chain', expected 'main'"
+    [ "$ibd" = false ] || die "$CHAIN: node is still syncing (height $blocks); re-run once it has caught up"
     genesis="$(rpc getblockhash '[0]' | tr -d '"')"
-    [ "$genesis" = "$COIN_GENESIS" ] || die "node genesis $genesis does not match $COIN_NAME ($COIN_GENESIS); wrong --chain?"
-    info "Node is synced at height $blocks"
+    [ "$genesis" = "$COIN_GENESIS" ] || die "$CHAIN: node genesis $genesis does not match $COIN_NAME ($COIN_GENESIS)"
+    HEIGHTS[$CHAIN]="$blocks"
+    info "$CHAIN: node at height $blocks, RPC ${DAEMON_URL##*@}"
+}
+
+# Check every chain's node before changing anything.
+check_nodes() {
+    local chain
+    for chain in "${CHAINS[@]}"; do
+        load_profile "$chain"
+        coin_info
+        if [ -n "$DAEMON_URL_ARG" ]; then DAEMON_URL="$DAEMON_URL_ARG"; else read_node_rpc; fi
+        check_node
+        DAEMON_URLS[$chain]="$DAEMON_URL"
+    done
 }
 
 check_resources() {
-    local disk_gb ram_gb probe="$DB_DIRECTORY"
-    [ -d "$probe" ] || probe="$(dirname "$DB_DIRECTORY")"
+    local chain disk_gb ram_gb need_disk=0 need_ram=0 probe="$DB_ROOT"
+    for chain in "${CHAINS[@]}"; do
+        load_profile "$chain"
+        need_disk=$((need_disk + MIN_DISK_GB))
+        need_ram=$((need_ram + MIN_RAM_GB))
+    done
+    [ -d "$probe" ] || probe="$(dirname "$DB_ROOT")"
     disk_gb="$(df -BG --output=avail "$probe" | tail -n1 | tr -dc '0-9')"
     ram_gb="$(awk '/^MemTotal:/ { printf "%d", $2 / 1048576 + 0.5 }' /proc/meminfo)"
-    [ "$disk_gb" -ge "$MIN_DISK_GB" ] || warn "only ${disk_gb} GB free for $DB_DIRECTORY; $COIN_NAME needs about ${MIN_DISK_GB} GB"
-    [ "$ram_gb" -ge "$MIN_RAM_GB" ] || warn "only ${ram_gb} GB RAM; $COIN_NAME needs about ${MIN_RAM_GB} GB"
+    [ "$disk_gb" -ge "$need_disk" ] || warn "only ${disk_gb} GB free for $DB_ROOT; these chains need about ${need_disk} GB"
+    [ "$ram_gb" -ge "$need_ram" ] || warn "only ${ram_gb} GB RAM; these chains need about ${need_ram} GB"
 }
 
 # Let's Encrypt validates over IPv4 and, when an AAAA record exists, IPv6.
@@ -288,17 +344,47 @@ check_dns() {
 
 setup_user() {
     if ! id electrumx >/dev/null 2>&1; then
-        useradd --system --home-dir "$DB_DIRECTORY" --no-create-home --shell /usr/sbin/nologin electrumx
+        useradd --system --home-dir "$DB_ROOT" --no-create-home --shell /usr/sbin/nologin electrumx
     fi
-    install -d -m 750 -o electrumx -g electrumx "$DB_DIRECTORY"
-    install -d -m 755 /etc/electrumx
+    install -d -m 755 -o electrumx -g electrumx "$DB_ROOT"
+    install -d -m 755 "$CONF_DIR"
+    install -d -m 755 -o root -g electrumx "$CONF_DIR/tls"
+    TLS_DIR="$CONF_DIR/tls/$DOMAIN"
     install -d -m 750 -o root -g electrumx "$TLS_DIR"
+}
+
+# Move a single-chain install (/etc/electrumx.conf, /db, electrumx.service,
+# LynxElectrumX up to v2.0.0-lynx.0) to the per-chain layout, keeping its
+# database so it does not re-index.
+migrate_single_chain() {
+    [ -f /etc/electrumx.conf ] || [ -f /etc/systemd/system/electrumx.service ] || return 0
+    local coin chain dir
+    coin="$(sed -n 's/^COIN=//p' /etc/electrumx.conf 2>/dev/null || true)"
+    chain="${coin,,}"
+    info "Migrating the single-chain install (${coin:-unknown coin}) to the per-chain layout"
+    if systemctl is-active --quiet electrumx.service; then systemctl stop electrumx.service; fi
+    systemctl disable --quiet electrumx.service 2>/dev/null || true
+    rm -f /etc/systemd/system/electrumx.service
+    systemctl daemon-reload
+    if [ -n "$chain" ] && [ -d "$DB_ROOT/meta" ]; then
+        install -d -m 750 -o electrumx -g electrumx "$DB_ROOT/$chain"
+        for dir in utxo hist meta; do
+            if [ -e "$DB_ROOT/$dir" ]; then mv "$DB_ROOT/$dir" "$DB_ROOT/$chain/"; fi
+        done
+        info "Moved the $coin database to $DB_ROOT/$chain"
+        case " ${CHAINS[*]} " in
+            *" $chain "*) ;;
+            *) warn "$chain was migrated but is not in --chain; run build.sh --chain $chain to start it again" ;;
+        esac
+    fi
+    rm -f /etc/electrumx.conf "$CONF_DIR/tls/fullchain.pem" "$CONF_DIR/tls/privkey.pem"
 }
 
 install_helpers() {
     install -d -m 755 "$HOOK_DIR/certbot"
     install -m 755 "$SRC"/lynx/certbot/*.sh "$HOOK_DIR/certbot/"
     install -m 755 "$SRC/lynx/firewall/lynx-electrumx-firewall" /usr/local/sbin/
+    install -m 755 "$SRC/lynx/tools/lynx-electrumx-rpc" /usr/local/bin/
 }
 
 # Fill a template from lynx/templates with the exported variables.
@@ -318,14 +404,22 @@ install_file() {
     rm -f "$1"
 }
 
-write_config() {
-    export COIN_NAME DAEMON_URL DB_DIRECTORY DB_ENGINE CACHE_MB SSL_PORT WSS_PORT \
-        DOMAIN TLS_DIR RELEASE NODE_CONF NODE_SERVICE PREFIX
-    local tmp; tmp="$(mktemp)"
-    render electrumx.conf.tmpl > "$tmp"
-    CHANGED=0
-    install_file "$tmp" "$CONF" 640 root:electrumx
-    CONF_CHANGED=$CHANGED
+# Write /etc/electrumx/<chain>.conf for every chain. Sets CONF_CHANGED[chain].
+declare -A CONF_CHANGED
+write_configs() {
+    local chain tmp
+    for chain in "${CHAINS[@]}"; do
+        load_profile "$chain"
+        DAEMON_URL="${DAEMON_URLS[$chain]}"
+        install -d -m 750 -o electrumx -g electrumx "$DB_DIRECTORY"
+        export CHAIN COIN_NAME DAEMON_URL DB_DIRECTORY DB_ENGINE CACHE_MB SSL_PORT WSS_PORT ADMIN_PORT \
+            DOMAIN TLS_DIR RELEASE NODE_CONF PREFIX
+        tmp="$(mktemp)"
+        render electrumx.conf.tmpl > "$tmp"
+        CHANGED=0
+        install_file "$tmp" "$CONF_DIR/$chain.conf" 640 root:electrumx
+        CONF_CHANGED[$chain]=$CHANGED
+    done
 }
 
 setup_tls() {
@@ -357,7 +451,7 @@ setup_tls() {
 }
 
 setup_firewall() {
-    local tmp
+    local tmp unit
     for unit in electrumx-patch-firewall.service electrumx-patch-firewall.timer; do
         tmp="$(mktemp)"; render "$unit" > "$tmp"
         CHANGED=0; install_file "$tmp" "/etc/systemd/system/$unit" 644 root:root
@@ -369,41 +463,52 @@ setup_firewall() {
     journalctl -u electrumx-patch-firewall.service -n 3 --no-pager -o cat || true
 }
 
-setup_service() {
-    local tmp; tmp="$(mktemp)"
-    render electrumx.service > "$tmp"
+setup_services() {
+    local tmp chain unit unit_changed
+    tmp="$(mktemp)"
+    render electrumx@.service > "$tmp"
     CHANGED=0
-    install_file "$tmp" /etc/systemd/system/electrumx.service 644 root:root
+    install_file "$tmp" /etc/systemd/system/electrumx@.service 644 root:root
+    unit_changed=$CHANGED
     systemctl daemon-reload
-    systemctl enable --quiet electrumx.service
-    if systemctl is-active --quiet electrumx.service; then
-        if [ "$CODE_CHANGED" = 1 ] || [ "$CONF_CHANGED" = 1 ] || [ "$CERT_CHANGED" = 1 ] || [ "$CHANGED" = 1 ]; then
-            info "Restarting ElectrumX"
-            systemctl restart electrumx.service
+    for chain in "${CHAINS[@]}"; do
+        unit="electrumx@$chain.service"
+        systemctl enable --quiet "$unit"
+        if systemctl is-active --quiet "$unit"; then
+            if [ "$CODE_CHANGED" = 1 ] || [ "${CONF_CHANGED[$chain]}" = 1 ] || [ "$CERT_CHANGED" = 1 ] || [ "$unit_changed" = 1 ]; then
+                info "Restarting $unit"
+                systemctl restart "$unit"
+            fi
+        else
+            info "Starting $unit"
+            systemctl start "$unit"
         fi
-    else
-        info "Starting ElectrumX"
-        systemctl start electrumx.service
-    fi
+    done
     sleep 5
-    systemctl is-active --quiet electrumx.service ||
-        die "ElectrumX failed to start; see: journalctl -u electrumx -n 50"
+    for chain in "${CHAINS[@]}"; do
+        systemctl is-active --quiet "electrumx@$chain.service" ||
+            die "electrumx@$chain failed to start; see: journalctl -u electrumx@$chain -n 50"
+    done
 }
 
 summary() {
-    local expiry
+    local expiry chain
     expiry="$(openssl x509 -in "$TLS_DIR/fullchain.pem" -noout -enddate 2>/dev/null | cut -d= -f2)"
+    echo
+    echo "LynxElectrumX $RELEASE ($(git -C "$SRC" rev-parse --short HEAD)), $EX_VERSION"
+    echo "  Host:         $DOMAIN   (certificate: $TLS, expires ${expiry:-unknown})"
+    echo "  DB:           $DB_ENGINE in $DB_ROOT/<chain>, config in $CONF_DIR/<chain>.conf"
+    echo
+    printf '  %-12s %-34s %-34s %s\n' chain SSL WSS 'node height'
+    for chain in "${CHAINS[@]}"; do
+        load_profile "$chain"
+        printf '  %-12s %-34s %-34s %s\n' "$chain" "ssl://$DOMAIN:$SSL_PORT" "wss://$DOMAIN:$WSS_PORT" "${HEIGHTS[$chain]}"
+    done
     cat <<EOF
 
-LynxElectrumX $RELEASE ($(git -C "$SRC" rev-parse --short HEAD)), $EX_VERSION
-  Coin:         $COIN_NAME   (DB: $DB_ENGINE in $DB_DIRECTORY)
-  Services:     ssl://$DOMAIN:$SSL_PORT  wss://$DOMAIN:$WSS_PORT
-  Certificate:  $TLS, expires ${expiry:-unknown}
-  Config:       $CONF
-
-ElectrumX now indexes the chain from genesis; this takes a while.
-  Sync status:  $VENV/bin/electrumx_rpc getinfo
-  Logs:         journalctl -fu electrumx
+ElectrumX indexes each chain from genesis; the ports open once it has caught up.
+  Sync status:  lynx-electrumx-rpc <chain> getinfo
+  Logs:         journalctl -fu electrumx@<chain>
 EOF
 }
 
@@ -412,28 +517,28 @@ main() {
     check_system
     touch "$LOG" && chmod 600 "$LOG"
     exec > >(tee -a "$LOG") 2>&1
-    info "$(date -u '+%F %T UTC') build.sh --chain $CHAIN --domain $DOMAIN --tls $TLS --version $RELEASE --db $DB_ENGINE"
+    info "$(date -u '+%F %T UTC') build.sh --chain $CHAIN_ARG --domain $DOMAIN --tls $TLS --version $RELEASE --db $DB_ENGINE"
 
     install_packages
     fetch_code
-    load_profile
+    resolve_chains
     install_venv
-    if [ -z "$DAEMON_URL" ]; then read_node_rpc; fi
-    check_node
+    check_nodes
     check_resources
     if [ "$TLS" = certbot ]; then check_dns; fi
     setup_user
+    migrate_single_chain
     install_helpers
-    write_config
+    write_configs
     local cert_before; cert_before="$(sha256sum "$TLS_DIR/fullchain.pem" 2>/dev/null || true)"
     setup_tls
     CERT_CHANGED=0
     [ "$cert_before" = "$(sha256sum "$TLS_DIR/fullchain.pem" 2>/dev/null || true)" ] || CERT_CHANGED=1
     setup_firewall
-    setup_service
+    setup_services
     summary
 
-    if [ "$FOLLOW_LOGS" = 1 ]; then exec journalctl -fu electrumx; fi
+    if [ "$FOLLOW_LOGS" = 1 ]; then exec journalctl -fu "electrumx@${CHAINS[0]}"; fi
 }
 
 main "$@"

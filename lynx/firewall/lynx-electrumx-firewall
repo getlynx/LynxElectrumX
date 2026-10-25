@@ -10,7 +10,8 @@
 # Works on IPv4 and IPv6: each family is handled when its SPARK chain exists.
 #
 # Usage: lynx-electrumx-firewall [apply|open-http|close-http]
-#   apply       (default) allow the ports in SERVICES from /etc/electrumx.conf
+#   apply       (default) allow the public ports in SERVICES of every chain
+#               configured in /etc/electrumx/*.conf
 #   open-http   also allow tcp/80, for a certbot challenge (certbot pre-hook)
 #   close-http  stop allowing tcp/80 (certbot post-hook)
 #
@@ -20,7 +21,7 @@
 
 set -euo pipefail
 
-CONF="${ELECTRUMX_CONF:-/etc/electrumx.conf}"
+CONF_DIR="${ELECTRUMX_CONF_DIR:-/etc/electrumx}"
 PARENT="SPARK"
 SUBCHAIN="SPARK_ELECTRUMX"
 LOCKFILE="/var/lock/spark-iptables"   # shared with Spark's own firewall scripts
@@ -31,10 +32,15 @@ log() {
     echo "$*"
 }
 
-# Ports of the public services in SERVICES=, e.g. ssl://:50002,wss://:50004,rpc://
+# Ports of the public services in every chain's SERVICES=, e.g.
+# ssl://:22569,wss://:22570,rpc://localhost:22571 gives 22569 and 22570.
 public_ports() {
-    sed -n 's/^SERVICES=//p' "$CONF" | tr ',' '\n' | grep -v '^rpc://' |
-        sed -n 's/.*:\([0-9][0-9]*\)$/\1/p' || true
+    local conf
+    for conf in "$CONF_DIR"/*.conf; do
+        [ -e "$conf" ] || continue
+        sed -n 's/^SERVICES=//p' "$conf" | tr ',' '\n' | grep -v '^rpc://' |
+            sed -n 's/.*:\([0-9][0-9]*\)$/\1/p' || true
+    done | sort -nu
 }
 
 # The iptables commands (iptables, ip6tables) whose SPARK chain exists.
@@ -51,7 +57,7 @@ apply() {
     local ports ipt port drop_line found=0
     ports="$(public_ports)"
     if [ -z "$ports" ]; then
-        log "ERROR: no public ports found in SERVICES in $CONF"
+        log "ERROR: no public ports found in SERVICES in $CONF_DIR/*.conf"
         exit 1
     fi
     if [ -e "$HTTP_MARKER" ]; then

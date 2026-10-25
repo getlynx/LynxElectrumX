@@ -1,4 +1,4 @@
-# ElectrumX configuration for ${COIN_NAME}.
+# ElectrumX configuration for ${COIN_NAME}, used by electrumx@${CHAIN}.service.
 # Written by lynx/build.sh (LynxElectrumX ${RELEASE}). Re-running build.sh
 # overwrites this file. Full reference: docs/environment.rst.
 #
@@ -18,8 +18,13 @@ DB_ENGINE=${DB_ENGINE}
 CACHE_MB=${CACHE_MB}
 
 # Listening services. Only TLS is public; rpc:// is the local admin
-# interface used by electrumx_rpc (127.0.0.1:8000).
-SERVICES=ssl://:${SSL_PORT},wss://:${WSS_PORT},rpc://
+# interface used by electrumx_rpc. The ports follow from the chain's P2P
+# port (lynx/chains/${CHAIN}.env), so they are the same on every server.
+SERVICES=ssl://:${SSL_PORT},wss://:${WSS_PORT},rpc://localhost:${ADMIN_PORT}
+
+# The admin port again, for the service's stop command and
+# lynx-electrumx-rpc. ElectrumX itself ignores this variable.
+LEX_ADMIN_PORT=${ADMIN_PORT}
 
 # What this server tells clients and peers to connect to.
 REPORT_SERVICES=ssl://${DOMAIN}:${SSL_PORT},wss://${DOMAIN}:${WSS_PORT}
