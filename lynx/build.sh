@@ -267,18 +267,30 @@ PY
 )"
 }
 
-# Call a node RPC method; prints the JSON "result".
+# Call a node RPC method; prints the JSON "result". A node that is busy
+# (syncing, or starting up) can take a while to answer, so retry a few times.
 rpc() {
-    local method="$1" params="${2:-[]}"
-    curl -sS --max-time 15 -H 'content-type: text/plain;' \
-        --data-binary "{\"jsonrpc\":\"1.0\",\"id\":\"build\",\"method\":\"$method\",\"params\":$params}" \
-        "$DAEMON_URL" | "$VENV/bin/python" -c '
+    local method="$1" params="${2:-[]}" reply attempt
+    for attempt in 1 2 3; do
+        reply="$(curl -sS --max-time 60 -H 'content-type: text/plain;' \
+            --data-binary "{\"jsonrpc\":\"1.0\",\"id\":\"build\",\"method\":\"$method\",\"params\":$params}" \
+            "$DAEMON_URL" 2>&1)" && [ -n "$reply" ] && ! grep -q '"code": *-28' <<< "$reply" && break
+        # -28 is "loading block index" / "verifying blocks": the node is starting up.
+        warn "$CHAIN: node RPC $method did not answer (attempt $attempt of 3): ${reply:-no reply}"
+        reply=""
+        [ "$attempt" = 3 ] || sleep 10
+    done
+    [ -n "$reply" ] || return 1
+    "$VENV/bin/python" -c '
 import json, sys
-reply = json.load(sys.stdin)
+try:
+    reply = json.loads(sys.argv[1])
+except ValueError:
+    sys.exit("not a JSON-RPC reply: " + sys.argv[1][:200])
 error = reply.get("error")
 if error:
     sys.exit(f"RPC error: {error}")
-print(json.dumps(reply["result"]))'
+print(json.dumps(reply["result"]))' "$reply"
 }
 
 check_node() {
