@@ -436,6 +436,8 @@ setup_tls() {
         return
     fi
 
+    local renewal_conf="/etc/letsencrypt/renewal/$DOMAIN.conf" had_cert=0
+    [ -f "$renewal_conf" ] && had_cert=1
     info "Requesting a Let's Encrypt certificate for $DOMAIN"
     certbot certonly --standalone --non-interactive --agree-tos --keep-until-expiring \
         -m "$EMAIL" -d "$DOMAIN" --cert-name "$DOMAIN" \
@@ -445,9 +447,14 @@ setup_tls() {
     # The deploy hook only runs when a certificate is issued, so install the
     # current one explicitly (covers re-runs and pre-existing certificates).
     RENEWED_LINEAGE="/etc/letsencrypt/live/$DOMAIN" LEX_NO_RESTART=1 "$HOOK_DIR/certbot/deploy-hook.sh"
-    info "Testing automatic renewal (certbot renew --dry-run)"
-    certbot renew --dry-run --cert-name "$DOMAIN" --quiet ||
-        warn "certbot renew --dry-run failed; automatic renewal will not work until this is fixed"
+    # A full test renewal against Let's Encrypt staging takes from seconds to
+    # minutes, and only proves something new when the certificate (and its
+    # stored renewal settings) were just created.
+    if [ "$had_cert" = 0 ]; then
+        info "Testing automatic renewal (certbot renew --dry-run; can take a few minutes)"
+        certbot renew --dry-run --cert-name "$DOMAIN" --quiet ||
+            warn "certbot renew --dry-run failed; automatic renewal will not work until this is fixed"
+    fi
 }
 
 setup_firewall() {
