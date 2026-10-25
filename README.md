@@ -16,26 +16,59 @@ This repository is [spesmilo/electrumx](https://github.com/spesmilo/electrumx), 
 
 All twelve chains run the same Lynx Core codebase: 80-byte headers, SegWit transactions, proof of stake.
 
-Each chain's Electrum ports follow from its P2P port: **SSL = P2P + 3**, **WebSocket (WSS) = P2P + 4**, and the local admin port = P2P + 5. They are the same on every server, so several chains can share one server and wallets always use the same port for a chain.
-
-| Chain | Ticker | `--chain` | P2P port | Electrum SSL | Electrum WSS |
-|---|---|---|---|---|---|
-| Alioth | ALIO | `alioth` | 55801 | 55804 | 55805 |
-| Borrelly | BORR | `borrelly` | 58400 | 58403 | 58404 |
-| Cassiopeia | CASS | `cassiopeia` | 53053 | 53056 | 53057 |
-| Delphinus | DELP | `delphinus` | 57690 | 57693 | 57694 |
-| Digitalcoin | DGC | `digitalcoin` | 7999 | 8002 | 8003 |
-| Enceladus | ENCE | `enceladus` | 58610 | 58613 | 58614 |
-| Fenrir | FENR | `fenrir` | 54825 | 54828 | 54829 |
-| Galatea | GALA | `galatea` | 55785 | 55788 | 55789 |
-| Halley | HALL | `halley` | 53836 | 53839 | 53840 |
-| Indus | INDU | `indus` | 54700 | 54703 | 54704 |
-| InfiniLooP | IL8P | `infiniloop` | 9449 | 9452 | 9453 |
-| Lynx | LYNX | `lynx` | 22566 | 22569 | 22570 |
-
-The public servers `electrum1.getlynx.io` and `electrum2.getlynx.io` run every chain on these ports.
+| Chain | Ticker | `--chain` | P2P port |
+|---|---|---|---|
+| Alioth | ALIO | `alioth` | 55801 |
+| Borrelly | BORR | `borrelly` | 58400 |
+| Cassiopeia | CASS | `cassiopeia` | 53053 |
+| Delphinus | DELP | `delphinus` | 57690 |
+| Digitalcoin | DGC | `digitalcoin` | 7999 |
+| Enceladus | ENCE | `enceladus` | 58610 |
+| Fenrir | FENR | `fenrir` | 54825 |
+| Galatea | GALA | `galatea` | 55785 |
+| Halley | HALL | `halley` | 53836 |
+| Indus | INDU | `indus` | 54700 |
+| InfiniLooP | IL8P | `infiniloop` | 9449 |
+| Lynx | LYNX | `lynx` | 22566 |
 
 Chain parameters (address prefixes, genesis hash, ports) come from [`src/kernel/chainparams.cpp`](https://github.com/getlynx/Lynx/blob/main/src/kernel/chainparams.cpp) in getlynx/Lynx. InfiniLooP's history from before it moved to the Lynx codebase (scrypt block hashes, `nTime` transactions up to height 2,800,000) is handled too.
+
+## Ports
+
+Each chain has its own Electrum ports, worked out from its P2P port, and they are the same on every server:
+
+- **SSL** (Electrum wallets) = P2P port + 3
+- **WSS** (WebSocket over TLS, for web clients) = P2P port + 4
+- **Admin** (`electrumx_rpc`, local to the server only, never opened in the firewall) = P2P port + 5
+
+A full deployment runs all twelve chains on one server. On the public servers `electrum1.getlynx.io` and `electrum2.getlynx.io`:
+
+| Chain | `--chain` | SSL | WSS | Admin (local) | Wallet server | Web client |
+|---|---|---|---|---|---|---|
+| Alioth | `alioth` | 55804 | 55805 | 55806 | `electrum1.getlynx.io:55804` | `wss://electrum1.getlynx.io:55805` |
+| Borrelly | `borrelly` | 58403 | 58404 | 58405 | `electrum1.getlynx.io:58403` | `wss://electrum1.getlynx.io:58404` |
+| Cassiopeia | `cassiopeia` | 53056 | 53057 | 53058 | `electrum1.getlynx.io:53056` | `wss://electrum1.getlynx.io:53057` |
+| Delphinus | `delphinus` | 57693 | 57694 | 57695 | `electrum1.getlynx.io:57693` | `wss://electrum1.getlynx.io:57694` |
+| Digitalcoin | `digitalcoin` | 8002 | 8003 | 8004 | `electrum1.getlynx.io:8002` | `wss://electrum1.getlynx.io:8003` |
+| Enceladus | `enceladus` | 58613 | 58614 | 58615 | `electrum1.getlynx.io:58613` | `wss://electrum1.getlynx.io:58614` |
+| Fenrir | `fenrir` | 54828 | 54829 | 54830 | `electrum1.getlynx.io:54828` | `wss://electrum1.getlynx.io:54829` |
+| Galatea | `galatea` | 55788 | 55789 | 55790 | `electrum1.getlynx.io:55788` | `wss://electrum1.getlynx.io:55789` |
+| Halley | `halley` | 53839 | 53840 | 53841 | `electrum1.getlynx.io:53839` | `wss://electrum1.getlynx.io:53840` |
+| Indus | `indus` | 54703 | 54704 | 54705 | `electrum1.getlynx.io:54703` | `wss://electrum1.getlynx.io:54704` |
+| InfiniLooP | `infiniloop` | 9452 | 9453 | 9454 | `electrum1.getlynx.io:9452` | `wss://electrum1.getlynx.io:9453` |
+| Lynx | `lynx` | 22569 | 22570 | 22571 | `electrum1.getlynx.io:22569` | `wss://electrum1.getlynx.io:22570` |
+
+The same ports work on `electrum2.getlynx.io`. Configure both in wallets, so they can switch if one is down.
+
+**Provider firewall.** If your VPS provider has its own firewall, a full deployment needs these inbound TCP ports open (80 is for Let's Encrypt certificates; the rest are SSL and WSS):
+
+```
+80, 8002, 8003, 9452, 9453, 22569, 22570, 53056, 53057, 53839, 53840, 54703, 54704, 54828, 54829, 55788, 55789, 55804, 55805, 57693, 57694, 58403, 58404, 58613, 58614
+```
+
+A server with fewer chains needs only 80 plus those chains' SSL and WSS ports. The firewall on the server itself is set up by the installer.
+
+The ports are generated into `lynx/chains/<chain>.env` by `lynx/tools/sync_chainparams.py`, which refuses any new chain whose ports would collide with another chain's.
 
 ## Installing a server
 
@@ -78,7 +111,7 @@ The node is ready when it shows `"initialblockdownload": false`. The installer c
 Before running the installer, make sure:
 
 - the server's **hostname** has an A record (and an AAAA record, if you publish one) pointing at this VPS; the installer gets a Let's Encrypt certificate for it and checks every record;
-- your provider's firewall, if it has one, allows inbound **TCP 80** (certificates) and each chain's **SSL and WSS ports** from the table above; the firewall on the VPS itself is handled by the installer.
+- your provider's firewall, if it has one, allows inbound **TCP 80** (certificates) and each chain's **SSL and WSS ports** (see [Ports](#ports)); the firewall on the VPS itself is handled by the installer.
 
 Then, as root, for one chain:
 
@@ -142,7 +175,7 @@ should answer with `"result":["ElectrumX 2.0.0","1.4"]`.
 
 ### Connect a wallet
 
-In the wallet's server settings, enter the hostname with the chain's **SSL port** from the table above, for example `electrum1.getlynx.io:22569` for Lynx. Web clients use the chain's WSS port, for example `wss://electrum1.getlynx.io:22570`. Plain TCP is not offered.
+In the wallet's server settings, enter the hostname with the chain's **SSL port** from [Ports](#ports), for example `electrum1.getlynx.io:22569` for Lynx. Web clients use the chain's WSS port, for example `wss://electrum1.getlynx.io:22570`. Plain TCP is not offered.
 
 ### Update
 
@@ -195,7 +228,7 @@ Keep in mind:
 ### Differences from upstream ElectrumX
 
 - **Protocol is capped at 1.6** for these chains. Protocol 1.7's `blockchain.outpoint.*` methods need the node's `txospenderindex` (Bitcoin Core 31+), which Lynx Core 28.x does not have; without it, spent outputs would be reported as unspent.
-- **Servers offer TLS only**: SSL and WebSocket over TLS, on each chain's own ports (see [Supported chains](#supported-chains)).
+- **Servers offer TLS only**: SSL and WebSocket over TLS, on each chain's own ports (see [Ports](#ports)).
 
 ## Development
 
